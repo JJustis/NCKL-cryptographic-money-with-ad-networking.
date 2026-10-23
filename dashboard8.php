@@ -3213,7 +3213,8 @@ if ($isLoggedIn) {
         var availableClients = [];
         var liveAds = <?php echo json_encode($ads['ads'] ?? []); ?>;
         var serverConfig = {
-            mainApi: window.location.href,
+            // the address embedded ad code talks to: the PUBLIC site address, never the page this dashboard happens to be open on
+            mainApi: <?php echo json_encode(rtrim(pyc_site()['base_url'], '/') . '/dashboard8.php'); ?>,
             jsServer: '<?php echo 'http://' . htmlspecialchars(pyc_site()['public_host'], ENT_QUOTES) . ':8332'; ?>'
         };
         
