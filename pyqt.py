@@ -1315,7 +1315,7 @@ class CentralLedgerManager:
                        d.pythoncoin_address as wallet_address, 
                        ac.payout_amount as amount, 'credit' as transaction_type,
                        ac.click_time as timestamp, 
-                       CASE WHEN ac.processed = 1 THEN 'confirmed' ELSE 'pending' END as status, 
+                       CASE WHEN ac.payment_status = 'self' THEN 'self' WHEN ac.processed = 1 THEN 'confirmed' ELSE 'pending' END as status, 
                        ac.zone, d.username as developer_name,
                        ac.client_id, ac.ip_address, ac.user_agent
                 FROM ad_clicks ac
@@ -8573,9 +8573,11 @@ class UnifiedPythonCoinWallet(QMainWindow):
                     
                     # Amount
                     amount = update.get('amount', 0)
+                    status_for_amount = update.get('status', 'unknown')
                     amount_str = f"{float(amount):.8f} NCKL"
                     amount_item = QTableWidgetItem(amount_str)
-                    amount_item.setBackground(QColor(200, 255, 200))  # Light green for earnings
+                    if status_for_amount != 'self':
+                        amount_item.setBackground(QColor(200, 255, 200))  # Light green for earnings
                     self.ledger_table.setItem(i, 3, amount_item)
                     
                     # Zone
@@ -8589,8 +8591,10 @@ class UnifiedPythonCoinWallet(QMainWindow):
                     
                     # Status
                     status = update.get('status', 'unknown')
-                    status_item = QTableWidgetItem(status.upper())
-                    if status == 'confirmed':
+                    status_item = QTableWidgetItem("SELF - NO REWARD" if status == 'self' else status.upper())
+                    if status == 'self':
+                        status_item.setBackground(QColor(225, 225, 230))  # Grey: an advertiser clicking its own ad (counted, not paid)
+                    elif status == 'confirmed':
                         status_item.setBackground(QColor(200, 255, 200))  # Light green
                     elif status == 'pending':
                         status_item.setBackground(QColor(255, 255, 200))  # Light yellow
