@@ -1570,8 +1570,8 @@ if (isset($_GET['ajax'])) {
 
                     // Prioritize developer_address from POST (for embedded ads)
                     if (isset($_POST['developer_address']) && !empty($_POST['developer_address'])) {
-                        $stmt = $pdo->prepare("SELECT id, username, pythoncoin_address FROM developers WHERE pythoncoin_address = ?");
-                        $stmt->execute([$_POST['developer_address']]);
+                        $stmt = $pdo->prepare("SELECT id, username, pythoncoin_address FROM developers WHERE pythoncoin_address = ? ORDER BY (username = ?) DESC, id ASC LIMIT 1");
+                        $stmt->execute([$_POST['developer_address'], (string)($_POST['developer'] ?? '')]);
                         $devFromAddress = $stmt->fetch();
                         if ($devFromAddress) {
                             $developer = $devFromAddress;
@@ -1834,8 +1834,8 @@ if (isset($_GET['ajax'])) {
 
                 // Prioritize developer_address from POST (for embedded ads)
                 if (isset($_POST['developer_address']) && !empty($_POST['developer_address'])) {
-                    $stmt = $pdo->prepare("SELECT id, username, pythoncoin_address FROM developers WHERE pythoncoin_address = ?");
-                    $stmt->execute([$_POST['developer_address']]);
+                    $stmt = $pdo->prepare("SELECT id, username, pythoncoin_address FROM developers WHERE pythoncoin_address = ? ORDER BY (username = ?) DESC, id ASC LIMIT 1");
+                    $stmt->execute([$_POST['developer_address'], (string)($_POST['developer'] ?? '')]);
                     $devFromAddress = $stmt->fetch();
                     if ($devFromAddress) {
                         $developer = $devFromAddress;
@@ -4363,7 +4363,7 @@ code += '    }\n\n';
             code += '            body: "client_host=" + encodeURIComponent(client.host) + \n';
             code += '                  "&client_port=" + encodeURIComponent(client.port || "8332") + \n';
             code += '                  "&zone=" + encodeURIComponent(PYC_AD_CONFIG.zone) + \n';
-            code += '                  "&developer_address=" + encodeURIComponent(PYC_AD_CONFIG.pythonCoinAddress)\n';
+            code += '                  "&developer_address=" + encodeURIComponent(PYC_AD_CONFIG.pythonCoinAddress) + "&developer=" + encodeURIComponent(PYC_AD_CONFIG.developer)\n';
             code += '        })\n';
             code += '        .then(function(response) { return response.text(); })\n';
             code += '        .then(function(text) {\n';
@@ -4614,7 +4614,7 @@ code += '    }\n\n';
             code += '            body: "ad_id=" + encodeURIComponent(ad.id || ad.ad_id || "unknown") + \n';
             code += '                  "&client_id=" + encodeURIComponent(client.client_id || "unknown") + \n';
             code += '                  "&zone=" + encodeURIComponent(PYC_AD_CONFIG.zone) + \n';
-            code += '                  "&developer_address=" + encodeURIComponent(PYC_AD_CONFIG.pythonCoinAddress)\n';
+            code += '                  "&developer_address=" + encodeURIComponent(PYC_AD_CONFIG.pythonCoinAddress) + "&developer=" + encodeURIComponent(PYC_AD_CONFIG.developer)\n';
             code += '        })\n';
             code += '        .then(function(response) { \n';
             code += '            if (!response.ok) {\n';
@@ -4641,7 +4641,7 @@ code += '                  "&client_id=" + encodeURIComponent(clientId) + \n';
 code += '                  "&zone=" + encodeURIComponent(PYC_AD_CONFIG.zone) + \n';
 code += '                  "&payout_amount=" + encodeURIComponent(payoutAmount) + \n';
 code += '                  "&load_id=" + encodeURIComponent(PYC_AD_CONFIG.loadId) + \n';
-code += '                  "&developer_address=" + encodeURIComponent(PYC_AD_CONFIG.pythonCoinAddress)\n';
+code += '                  "&developer_address=" + encodeURIComponent(PYC_AD_CONFIG.pythonCoinAddress) + "&developer=" + encodeURIComponent(PYC_AD_CONFIG.developer)\n';
 code += '        })\n';
 code += '        .then(function(response) { return response.text(); })\n';
 code += '        .then(function(text) {\n';

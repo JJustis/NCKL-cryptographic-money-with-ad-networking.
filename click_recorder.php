@@ -20,8 +20,9 @@ if (!defined('CLK_MAX_PAYOUT'))     define('CLK_MAX_PAYOUT', 0.1);   // same cei
 /** Find the developer (publisher) by wallet address and/or username. Returns the row or null. */
 function clk_find_developer(PDO $pdo, $address = '', $username = '') {
     if (is_string($address) && $address !== '') {
-        $st = $pdo->prepare("SELECT id, username, pythoncoin_address FROM developers WHERE pythoncoin_address = ? LIMIT 1");
-        $st->execute([$address]);
+        // several accounts can share one wallet address: prefer the one whose username was given, else the oldest
+        $st = $pdo->prepare("SELECT id, username, pythoncoin_address FROM developers WHERE pythoncoin_address = ? ORDER BY (username = ?) DESC, id ASC LIMIT 1");
+        $st->execute([$address, is_string($username) ? $username : '']);
         if ($row = $st->fetch(PDO::FETCH_ASSOC)) return $row;
     }
     if (is_string($username) && $username !== '') {
