@@ -44,5 +44,52 @@ class TestWalletRoundTrip(unittest.TestCase):
         self.assertIsNone(error, error)
 
 
+class _Sig:
+    def __init__(self): self.n = 0
+    def emit(self, *a): self.n += 1
+
+
+class _FakeWallet:
+    """Just enough of the wallet to run its verification code without a window."""
+    def __init__(self, chain):
+        self.blockchain = type("B", (), {"chain": chain, "utxo": {}})()
+        self.verification_results = {}
+        self.lines = []
+        self._verify_done_signal = _Sig()
+    def audit_log(self, message): self.lines.append(message)
+    def _verify_against_mysql(self): pass
+
+
+class TestChainVerificationButton(unittest.TestCase):
+    """'Verify Entire Blockchain' once killed the wallet: it built a string of "0" * difficulty, and on v2 blocks the
+    difficulty is the compact target (about 500 million), and it wrote to the window from a worker thread."""
+
+    def test_big_difficulty_does_not_allocate_a_giant_string(self):
+        import pyqt
+        cls = next(c for _, c in inspect.getmembers(pyqt, inspect.isclass) if "_verify_block_comprehensive" in c.__dict__)
+        fake = _FakeWallet([])
+        prev = type("Blk", (), {"hash": "p"})()
+        block = type("Blk", (), {"index": 5, "previous_hash": "p", "hash": "h", "difficulty": 503382015, "transactions": []})()
+        fake.blockchain.chain = [None] * 4 + [prev, block]       # passes the index and previous-hash checks, reaches the proof-of-work line
+        import tracemalloc
+        tracemalloc.start()
+        cls.__dict__["_verify_block_comprehensive"](fake, block, 5)          # fails later on the fake block's missing methods: that is fine
+        peak = tracemalloc.get_traced_memory()[1]
+        tracemalloc.stop()
+        self.assertLess(peak, 50_000_000)
+
+    def test_verification_uses_the_consensus_rules_and_signals_when_done(self):
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "blockchain.json")
+        if not os.path.exists(path):
+            self.skipTest("no blockchain.json here")
+        import pyqt
+        cls = next(c for _, c in inspect.getmembers(pyqt, inspect.isclass) if "_perform_full_verification" in c.__dict__)
+        chain = [pc.Block.from_dict(b) for b in json.load(open(path, encoding="utf-8"))["chain"]]
+        fake = _FakeWallet(chain)
+        cls.__dict__["_perform_full_verification"](fake)
+        self.assertEqual(fake._verify_done_signal.n, 1, "the window is told to re-enable the button through a signal")
+        self.assertTrue(all(v["valid"] for v in fake.verification_results.values()))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

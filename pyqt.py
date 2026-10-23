@@ -6805,8 +6805,14 @@ class EnhancedDeveloperRegistration:
 class UnifiedPythonCoinWallet(QMainWindow):
     """Enhanced Unified Nickles wallet with proper genesis coordination"""
     
+    # Worker threads must never touch widgets directly (that kills the whole program); they emit these instead.
+    _audit_signal = pyqtSignal(str)
+    _verify_done_signal = pyqtSignal()
+
     def __init__(self):
         super().__init__()
+        self._audit_signal.connect(self._audit_log_gui)
+        self._verify_done_signal.connect(self._on_verification_done)
         
         # Initialize basic properties first
         self.db_manager = DatabaseManager()
@@ -13505,13 +13511,23 @@ Your {ad_type} advertisement is now live and ready to earn NCKL!"""
             self.log_message(f"❌ Failed to send proposed transaction {tx.tx_id}.")
 
     def audit_log(self, message):
-        """Add message to audit log"""
+        """Add message to audit log (safe to call from any thread)"""
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.audit_log_text.append(f"[{timestamp}] {message}")
-        # Auto-scroll to bottom
+        self._audit_signal.emit(f"[{timestamp}] {message}")
+
+    def _audit_log_gui(self, line):
+        """Runs on the GUI thread (queued by the signal above)."""
+        self.audit_log_text.append(line)
         self.audit_log_text.verticalScrollBar().setValue(
             self.audit_log_text.verticalScrollBar().maximum()
         )
+
+    def _on_verification_done(self):
+        self.verify_blockchain_btn.setEnabled(True)
+        try:
+            self.refresh_blockchain_view()
+        except Exception as e:
+            logger.error(f"Refresh after verification failed: {e}")
 
     def update_blockchain_stats(self):
         """Update blockchain statistics display"""
@@ -13638,56 +13654,49 @@ Your {ad_type} advertisement is now live and ready to earn NCKL!"""
             self.verify_blockchain_btn.setEnabled(True)
 
     def _perform_full_verification(self):
-        """Perform full blockchain verification (runs in background)"""
+        """Verify the whole chain with the consensus rules (runs in a background thread: no widget access here)"""
         try:
-            total_blocks = len(self.blockchain.chain)
-            self.audit_log(f"📊 Verifying {total_blocks} blocks...")
+            import consensus
+            blocks = list(self.blockchain.chain)
+            total_blocks = len(blocks)
+            self.audit_log(f"Verifying {total_blocks} blocks against the consensus rules...")
 
-            valid_blocks = 0
-            invalid_blocks = 0
+            error, _utxo, _work = consensus.validate_chain(blocks)
+            first_bad = None
+            if error:
+                m = re.match(r"block (\d+):", error)
+                first_bad = int(m.group(1)) if m else 0
 
-            for i, block in enumerate(self.blockchain.chain):
-                # Verify block
-                is_valid = self._verify_block_comprehensive(block, i)
-
-                self.verification_results[i] = {
-                    'valid': is_valid,
-                    'timestamp': time.time()
-                }
-
-                if is_valid:
-                    valid_blocks += 1
+            for i in range(total_blocks):
+                if first_bad is None or i < first_bad:
+                    self.verification_results[i] = {'valid': True, 'timestamp': time.time()}
+                elif i == first_bad:
+                    self.verification_results[i] = {'valid': False, 'timestamp': time.time()}
                 else:
-                    invalid_blocks += 1
-                    self.audit_log(f"❌ Block {i} failed verification!")
+                    self.verification_results[i] = {'valid': None, 'timestamp': time.time()}  # not checked: depends on the bad block
 
-                # Update progress every 10 blocks
-                if (i + 1) % 10 == 0:
-                    percent = int(((i + 1) / total_blocks) * 100)
-                    self.audit_log(f"⏳ Progress: {i + 1}/{total_blocks} ({percent}%)")
-
-            # Final report
+            valid_blocks = total_blocks if first_bad is None else first_bad
             self.audit_log("=" * 50)
-            self.audit_log(f"✅ Verification complete!")
-            self.audit_log(f"📊 Total blocks: {total_blocks}")
-            self.audit_log(f"✅ Valid blocks: {valid_blocks}")
-            self.audit_log(f"❌ Invalid blocks: {invalid_blocks}")
+            if first_bad is None:
+                self.audit_log("Verification complete: the whole chain follows the consensus rules")
+            else:
+                self.audit_log(f"Block {first_bad} failed: {error}")
+            self.audit_log(f"Total blocks: {total_blocks}")
+            self.audit_log(f"Valid blocks: {valid_blocks}")
+            self.audit_log(f"Invalid or unchecked blocks: {total_blocks - valid_blocks}")
             self.audit_log("=" * 50)
 
             # Verify against MySQL
             if hasattr(self, 'mysql_blockchain') and self.mysql_blockchain.is_connected:
-                self.audit_log("🔄 Cross-verifying with MySQL blockchain...")
+                self.audit_log("Cross-verifying with MySQL blockchain...")
                 self._verify_against_mysql()
 
-            # Refresh view
-            QTimer.singleShot(500, self.refresh_blockchain_view)
-
         except Exception as e:
-            self.audit_log(f"❌ Verification error: {str(e)}")
+            self.audit_log(f"Verification error: {str(e)}")
             logger.error(f"Full verification error: {e}")
 
         finally:
-            QTimer.singleShot(100, lambda: self.verify_blockchain_btn.setEnabled(True))
+            self._verify_done_signal.emit()
 
     def _verify_block_comprehensive(self, block, index):
         """Comprehensive block verification"""
@@ -13704,9 +13713,11 @@ Your {ad_type} advertisement is now live and ready to earn NCKL!"""
                     return False
 
             # 3. Verify proof of work
-            if not block.hash.startswith("0" * block.difficulty):
-                self.audit_log(f"❌ Block {index}: Invalid proof of work")
-                return False
+            import consensus
+            if index < consensus.PARAMS.v2_height:      # old blocks: hex zeros; v2 blocks: compact target (checked by consensus.validate_chain)
+                if not isinstance(block.difficulty, int) or not 0 <= block.difficulty <= 64 or not block.hash.startswith("0" * block.difficulty):
+                    self.audit_log(f"❌ Block {index}: Invalid proof of work")
+                    return False
 
             # 4. Verify block hash
             original_hash = block.hash
