@@ -2556,11 +2556,15 @@ class NodeDiscovery:
         self.running = False
         
         # Bootstrap nodes (seed nodes for initial discovery)
-        self.bootstrap_nodes = [
-            (dbconfig.site()["public_host"], 8333),
-            ("127.0.0.1", 5001),
-            ("127.0.0.1", 5002)
-        ]
+        self.bootstrap_nodes = []
+        try:   # shared seed list shipped with the program (network.json), so every install finds the same network
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "network.json"), "r", encoding="utf-8") as fh:
+                self.bootstrap_nodes = [(str(h), int(p)) for h, p in json.load(fh).get("seeds", [])]
+        except (OSError, ValueError):
+            pass
+        own = (dbconfig.site()["public_host"], 8333)
+        if own not in self.bootstrap_nodes:
+            self.bootstrap_nodes.append(own)
         
         logger.info("Node discovery system initialized")
     

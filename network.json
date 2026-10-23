@@ -1,0 +1,4 @@
+{
+  "comment": "Seed nodes every install contacts first to find the shared Nickles network. Add more as the network grows.",
+  "seeds": [["secupgrade.com", 8333]]
+}
