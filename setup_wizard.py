@@ -50,10 +50,14 @@ class Wizard(tk.Tk):
         self.back_btn = ttk.Button(bar, text="< Back", command=self.back)
         self.back_btn.pack(side="right", padx=6)
 
-        self.pages = [("Welcome", self.p_welcome), ("System check", self.p_system), ("Database", self.p_database),
+        self.pages = [("Welcome", self.p_welcome), ("How Nickles works (1 of 3): the coin", self.p_tut1),
+                      ("How Nickles works (2 of 3): who does what", self.p_tut2), ("How Nickles works (3 of 3): where the money goes", self.p_tut3),
+                      ("System check", self.p_system), ("Database", self.p_database),
                       ("You and your wallet", self.p_people), ("Your company and the advertiser contract", self.p_operator),
                       ("Where to publish", self.p_publish), ("Ready to install", self.p_summary), ("Installing", self.p_install),
                       ("All done", self.p_done)]
+        names = ["welcome", "tut1", "tut2", "tut3", "system", "database", "people", "operator", "publish", "summary", "install", "done"]
+        self.K = {n: i for i, n in enumerate(names)}
         self.show(0)
         self.protocol("WM_DELETE_WINDOW", self.on_cancel)
 
@@ -101,9 +105,9 @@ class Wizard(tk.Tk):
         self.clear()
         builder()
         last = index == len(self.pages) - 1
-        self.back_btn.config(state="disabled" if index in (0, 7, 8) else "normal")
-        self.next_btn.config(text="Install" if index == 6 else ("Finish" if last else "Next >"), state="disabled" if index == 7 else "normal")
-        self.cancel_btn.config(state="disabled" if index in (7, 8) else "normal")
+        self.back_btn.config(state="disabled" if index in (0, self.K["install"], self.K["done"]) else "normal")
+        self.next_btn.config(text="Install" if index == self.K["summary"] else ("Finish" if last else "Next >"), state="disabled" if index == self.K["install"] else "normal")
+        self.cancel_btn.config(state="disabled" if index in (self.K["install"], self.K["done"]) else "normal")
 
     def next(self):
         try:
@@ -112,11 +116,11 @@ class Wizard(tk.Tk):
         except se.SetupError as e:
             messagebox.showwarning("Please check", str(e))
             return
-        if self.page_index == 8:
+        if self.page_index == self.K["done"]:
             self.destroy()
             return
-        if self.page_index == 6:
-            self.show(7)
+        if self.page_index == self.K["summary"]:
+            self.show(self.K["install"])
             self.start_install()
             return
         self.show(self.page_index + 1)
@@ -139,15 +143,15 @@ class Wizard(tk.Tk):
 
     def validate(self, index):
         s = self.settings
-        if index == 2:
+        if index == self.K["database"]:
             for k, label in (("db_name", "database name"), ("db_app_user", "database user")):
                 se._ident(s[k])
-        if index == 3 and s["wallet_mode"] == "import" and len(s["wallet_private_key"].strip()) != 64:
+        if index == self.K["people"] and s["wallet_mode"] == "import" and len(s["wallet_private_key"].strip()) != 64:
             raise se.SetupError("Paste the 64-character private key, or choose a different wallet option.")
-        if index == 4:
+        if index == self.K["operator"]:
             if not s["operator_name"].strip() or not s["operator_contact"].strip() or not s["governing_law"].strip():
                 raise se.SetupError("The advertiser contract needs your company name, a contact address and the country whose law applies.")
-        if index == 5:
+        if index == self.K["publish"]:
             if not s["web_dir"].strip():
                 raise se.SetupError("Choose the website folder.")
             if not s["public_url"].startswith(("http://", "https://")):
@@ -162,6 +166,51 @@ class Wizard(tk.Tk):
                    "  -  creates your wallet, the chain and the encryption keys\n"
                    "  -  publishes the dashboard and the advertiser contract to your website folder")
         self.label("Nothing is changed until you press Install on the last page. Ports used by the network: 8332 (ads/portal) and 8333 (peers).")
+
+    def tut(self, blocks):
+        for head, text in blocks:
+            self.label(head, font=("Segoe UI", 10, "bold"))
+            self.label(text)
+
+    def p_tut1(self):
+        self.tut([
+            ("Nickles (NCKL) is a coin that is earned two ways",
+             "1. Mining: your PC solves a puzzle and, when it finds a block, receives new coins. Like Bitcoin there will only ever be 21 million, "
+             "the reward halves over time, and there was no pre-mine - every coin is mined."),
+            ("One network for everyone",
+             "Every install starts from the same first block (genesis.json), so everyone who installs this shares one coin and one chain. "
+             "Your node finds the others through the seed list in network.json."),
+            ("2. Advertising",
+             "Publishers show ads on their websites and are paid in NCKL when a visitor clicks. Advertisers pay for those clicks. "
+             "That gives the coin a use from day one."),
+            ("Your wallet",
+             "The wallet is a file (wallet.json) holding your private key. Whoever has it owns the coins. Nobody can recover it for you - back it up.")])
+
+    def p_tut2(self):
+        self.tut([
+            ("Publisher - earns coins",
+             "You put a small piece of code on your website (the dashboard creates it). It shows ads. Each click earns the ad's price, paid from your "
+             "wallet app's payment queue after a 24-hour fraud-check hold. Only one click per page load is paid."),
+            ("Advertiser - pays for clicks",
+             "Reads and accepts the Advertiser Agreement on your website (advertiser_terms.php), pays the one-time upload fee in your shop for each ad, "
+             "sends the ad from the wallet app, and deposits NCKL to fund clicks. Nothing is shown until you approve the ad."),
+            ("Operator - that's you",
+             "You run the node and the website, review ads (ads_admin.py pending / approve / reject), and can add a service margin to clicks. "
+             "Partners can install their own copy with this same wizard and join the same network.")])
+
+    def p_tut3(self):
+        self.tut([
+            ("Following one click",
+             "A visitor clicks an ad  >  the click is recorded once for that page load  >  the advertiser's balance is charged the click price  >  "
+             "the publisher's payout is held 24 hours  >  your wallet app pays it out as a normal Nickles transaction."),
+            ("Two kinds of fee",
+             "Upload fee: paid in Bitcoin through your shop, once for every ad submission, to cover hosting and review.  "
+             "Click charges: paid in NCKL out of the advertiser's deposit, at cost (plus a margin if you set one)."),
+            ("Safety built in",
+             "Bots and self-clicks are not paid, daily limits stop abuse, ads run in a sandbox and are labelled 'Ad', and secrets (wallet, database login, "
+             "keys) are never served by the web server."),
+            ("Before you take real advertisers",
+             "The agreement is a template, not legal advice - have a lawyer check it. Crypto and advertising rules differ by country.")])
 
     def p_system(self):
         rows, missing = se.system_check(self.settings)
@@ -246,6 +295,11 @@ class Wizard(tk.Tk):
         self.label("Start the wallet with run.bat. Advertisers accept the contract at:\n%s/advertiser_terms.php" % self.settings["public_url"].rstrip("/"))
         if not r.get("site_reachable"):
             self.label("The website address did not answer yet - that is normal if it is not online yet.")
+        self.label("What to do next", font=("Segoe UI", 10, "bold"))
+        self.label("1. Start the wallet: run.bat. Let it mine for a while - new coins can only be spent after 100 blocks.\n"
+                   "2. Open the dashboard on your website, sign in with your wallet address and copy the ad code into a page.\n"
+                   "3. Send advertisers to the contract page above. Review their ads with:  python ads_admin.py pending\n"
+                   "4. To let other computers join, open port 8333 on your router and set the node host to 0.0.0.0.")
         self.label("Back up the key folder and wallet.json: they cannot be recovered if lost.", fg="#b3261e")
 
     # ---------------------------------------------------------------- install
@@ -274,10 +328,10 @@ class Wizard(tk.Tk):
         if error:
             self._log("\nSTOPPED: %s" % error)
             self.next_btn.config(text="Close", state="normal", command=self.destroy)
-            self.back_btn.config(state="normal", command=lambda: self.show(6) or self.next_btn.config(command=self.next))
+            self.back_btn.config(state="normal", command=lambda: self.show(self.K["summary"]) or self.next_btn.config(command=self.next))
             messagebox.showerror("Setup stopped", str(error))
         else:
-            self.show(8)
+            self.show(self.K["done"])
 
 
 def main():
