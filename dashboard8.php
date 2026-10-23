@@ -4879,13 +4879,22 @@ code += '    }\n\n';
             }
         }
         
+        // one id per page load: the server pays at most one click for each (same rule as the embedded ad code)
+        function pycPageLoadId() {
+            if (!window.__pycLoadId) {
+                try { var b = new Uint8Array(16); crypto.getRandomValues(b); window.__pycLoadId = Array.prototype.map.call(b, function(x) { return ('0' + x.toString(16)).slice(-2); }).join(''); }
+                catch (e) { window.__pycLoadId = String(Date.now()) + Math.random().toString(16).slice(2); }
+            }
+            return window.__pycLoadId;
+        }
+
         function simulateAdClick(adId, clientId, payoutAmount) {
             addLog('Processing ad click interaction...', 'info');
 
             pycFetch('?ajax=record_click', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'ad_id=' + encodeURIComponent(adId) + '&client_id=' + encodeURIComponent(clientId) + '&zone=preview&payout_amount=' + payoutAmount
+                body: 'ad_id=' + encodeURIComponent(adId) + '&client_id=' + encodeURIComponent(clientId) + '&zone=preview&payout_amount=' + payoutAmount + '&load_id=' + encodeURIComponent(pycPageLoadId())
             })
             .then(function(response) {
                 console.log("Response status:", response.status); // Log response status
