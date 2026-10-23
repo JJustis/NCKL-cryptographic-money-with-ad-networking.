@@ -9,6 +9,7 @@
 
 session_start();
 require_once __DIR__ . '/click_recorder.php';   // single place that records clicks and impressions
+require_once __DIR__ . '/dbconfig.php';
 
 // Configuration - Enhanced for new ad structure
 define('PYTHONCOIN_SERVER_URL', 'http://' . pyc_site()['public_host'] . ':8332');
