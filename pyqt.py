@@ -8607,6 +8607,10 @@ class UnifiedPythonCoinWallet(QMainWindow):
                 
                 # Log summary
                 self.log_message(f"💰 Updated ad clicks display with {recent_count} click events")
+                try:
+                    self.update_my_ads_table()
+                except Exception as e:
+                    logger.error(f"My ads table refresh failed: {e}")
             else:
                 # No updates available
                 if hasattr(self, 'ledger_status'):
@@ -10243,12 +10247,32 @@ Your {ad_type} advertisement is now live and ready to earn NCKL!"""
             except Exception as e:
                 logger.error(f"Failed to broadcast ad to peer {peer_id}: {e}")
     
+    def _ad_click_stats(self, ad_ids):
+        """Clicks per ad as recorded in the database (website clicks never pass through self.click_events).
+        Returns {ad_id: (clicks, own_clicks, charged_nckl)} or {} when the database cannot be read."""
+        ids = [i for i in ad_ids if i]
+        if not ids:
+            return {}
+        try:
+            marks = ", ".join(["%s"] * len(ids))
+            rows = self.db_manager.execute_query(
+                "SELECT ad_id, COUNT(*) AS clicks, COALESCE(SUM(payment_status = 'self'), 0) AS own_clicks, "
+                "COALESCE(SUM(charged_sat), 0) AS charged_sat FROM ad_clicks "
+                f"WHERE ad_id IN ({marks}) AND payment_status <> 'rejected' GROUP BY ad_id", tuple(ids), fetch=True)
+            if rows is None:
+                return {}
+            return {r['ad_id']: (int(r['clicks']), int(r['own_clicks']), int(r['charged_sat']) / 100000000.0) for r in rows}
+        except Exception as e:
+            logger.error(f"Could not read ad click counts: {e}")
+            return {}
+
     def update_my_ads_table(self):
         """Update my advertisements table"""
         if not hasattr(self, 'my_ads_table'):
             return
         
         my_ads = [ad for ad in self.ads if ad.advertiser_address == self.wallet.address]
+        db_stats = self._ad_click_stats([ad.id for ad in my_ads])
         
         self.my_ads_table.setRowCount(len(my_ads))
         
@@ -10267,10 +10291,16 @@ Your {ad_type} advertisement is now live and ready to earn NCKL!"""
             self.my_ads_table.setItem(row, 2, payout_item)
             
             # Count clicks and calculate spent
-            ad_clicks = len([c for c in self.click_events if c.ad_id == ad.id])
-            spent = ad_clicks * ad.payout_rate
+            if db_stats:
+                ad_clicks, own_clicks, spent = db_stats.get(ad.id, (0, 0, 0.0))
+                click_tip = f"{ad_clicks - own_clicks} from visitors, {own_clicks} of your own (counted, no reward)"
+            else:
+                ad_clicks = len([c for c in self.click_events if c.ad_id == ad.id])
+                spent = ad_clicks * ad.payout_rate
+                click_tip = "live count from connected peers (database not available)"
             
             clicks_item = QTableWidgetItem(str(ad_clicks))
+            clicks_item.setToolTip(click_tip)
             clicks_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
             self.my_ads_table.setItem(row, 3, clicks_item)
             

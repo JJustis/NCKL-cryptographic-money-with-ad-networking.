@@ -91,5 +91,42 @@ class TestChainVerificationButton(unittest.TestCase):
         self.assertTrue(all(v["valid"] for v in fake.verification_results.values()))
 
 
+class TestMyAdsTable(unittest.TestCase):
+    """The Create Ad tab's table must show the clicks recorded in the database (website clicks never pass through
+    the wallet's in-memory click events)."""
+
+    def _run(self, rows):
+        import pyqt
+        from PyQt5.QtWidgets import QApplication, QTableWidget
+        TestMyAdsTable._app = QApplication.instance() or QApplication([])      # must outlive the widgets
+        cls = next(c for _, c in inspect.getmembers(pyqt, inspect.isclass) if "update_my_ads_table" in c.__dict__)
+
+        class FakeDb:
+            def execute_query(self, query, params=None, fetch=False):
+                return rows
+        ad = type("Ad", (), {"id": "ad-1", "title": "T", "description": "d", "category": "business", "payout_rate": 0.001,
+                             "expires_at": "2999-01-01T00:00:00", "advertiser_address": "Naddr"})()
+        fake = type("W", (), {})()
+        fake.my_ads_table = QTableWidget()
+        fake.my_ads_table.setColumnCount(7)
+        fake.ads = [ad]
+        fake.wallet = type("Wal", (), {"address": "Naddr"})()
+        fake.click_events = []
+        fake.db_manager = FakeDb()
+        fake._ad_click_stats = lambda ids: cls.__dict__["_ad_click_stats"](fake, ids)
+        cls.__dict__["update_my_ads_table"](fake)
+        return fake.my_ads_table
+
+    def test_clicks_and_spent_come_from_the_database(self):
+        table = self._run([{"ad_id": "ad-1", "clicks": 7, "own_clicks": 3, "charged_sat": 400000}])
+        self.assertEqual(table.item(0, 3).text(), "7")
+        self.assertIn("3 of your own", table.item(0, 3).toolTip())
+        self.assertEqual(table.item(0, 4).text(), "0.00400000")
+
+    def test_an_ad_with_no_clicks_shows_zero(self):
+        table = self._run([])
+        self.assertEqual(table.item(0, 3).text(), "0")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
