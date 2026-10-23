@@ -26,7 +26,7 @@ own setup and join the same network.
 
 ## Tests
 
-    python -m unittest test_consensus test_economy_deposits test_submit_ad
+    python -m unittest test_consensus test_economy_deposits test_submit_ad test_wallet_roundtrip
     php test_economy.php
 
 ## Before you go public - read this

@@ -10583,9 +10583,10 @@ Your {ad_type} advertisement is now live and ready to earn NCKL!"""
                 tx = Transaction(
                     sender=tx_data.get('sender', ''),
                     inputs=inputs,
-                    outputs=outputs
+                    outputs=outputs,
+                    data=tx_data.get('data') or {}   # the coinbase commits to its block height here; dropping it breaks the chain
                 )
-                
+
                 # Set all transaction properties
                 tx.tx_id = tx_data['tx_id']
                 tx.timestamp = tx_data['timestamp']
