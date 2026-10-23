@@ -7,6 +7,8 @@ Options -Indexes
 <FilesMatch "(?i)^(wallet\.json|dbconfig\.json|site_config\.json|economy\.json|\.htaccess)$">
     Require all denied
 </FilesMatch>
+# Never serve version-control data
+RewriteRule (^|/)\.git(/|$) - [F,L]
 # Code, databases, dumps, logs, backups: this machine only (also enforced site-wide from htdocs/.htaccess)
 <FilesMatch "(?i)^(blockchain\.json|requirements\.txt)$|\.(db|sql|log|py|pyc|bat|spec|md|ini|bak|original|backup.*|lnk|txt)$|\.(php|html)\.backup.*$|\.backup_.*$">
     Require local

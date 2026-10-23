@@ -913,8 +913,8 @@
         var availableClients = [];
         var liveAds = [];
         var serverConfig = {
-            mainApi: 'https://secupgrade.com/livepy/pythoncoin/api.php',
-            commands: 'https://secupgrade.com/livepy/pythoncoin/commands.php',
+            mainApi: new URL('api.php', location.href).href,
+            commands: new URL('commands.php', location.href).href,
             jsServer: 'http://secupgrade.com:8082'
         };
         var userStats = {

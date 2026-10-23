@@ -1,6 +1,6 @@
 """Pinwheel transparent encryption client for the PythonCoin ad network (mirror of pyc_pinwheel.js).
 
-    result = pinwheel_post_json("https://host/livepy/pythoncoin/api.php", {"action": "client_register_live", ...})
+    result = pinwheel_post_json("https://host/adnetworking/api.php", {"action": "client_register_live", ...})
 
 No accounts. A session opens automatically (ECDH-wrapped random root secret), then every query is sealed with
 AES-256-GCM under HKDF(root,"epoch-E") -> HKDF(...,"msg-N"), and every reply under HKDF(msg_key,"resp").

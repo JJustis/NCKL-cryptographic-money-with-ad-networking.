@@ -3,8 +3,9 @@ setlocal
 title Nickles Ad Network
 cd /d "%~dp0"
 
-rem XAMPP root = three levels up (xampp\htdocs\livepy\pythoncoin); fall back to C:\xampp
-set "XAMPP=%~dp0..\..\.."
+rem XAMPP root = two levels up (xampp\htdocs\adnetworking), else three, else C:\xampp
+set "XAMPP=%~dp0..\.."
+if not exist "%XAMPP%\mysql\bin\mysqld.exe" set "XAMPP=%~dp0..\..\.."
 if not exist "%XAMPP%\mysql\bin\mysqld.exe" set "XAMPP=C:\xampp"
 if not exist "%XAMPP%\mysql\bin\mysqld.exe" (
     echo [ERROR] XAMPP not found. Edit the XAMPP line in run.bat.
@@ -41,7 +42,7 @@ if errorlevel 1 (
 )
 
 echo [4/4] Starting Nickles wallet...
-echo      Dashboard: http://localhost/livepy/pythoncoin/dashboard8.php
+echo      Dashboard: http://localhost/adnetworking/dashboard8.php
 %PY% pyqt.py
 echo.
 echo Nickles exited with code %errorlevel%.

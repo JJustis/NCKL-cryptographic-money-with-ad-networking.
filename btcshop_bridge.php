@@ -14,7 +14,11 @@ require_once __DIR__ . '/economy.php';
 function bridge_cfg() {
     $cfg = econ_settings() + ['ad_upload_fee_required' => true, 'btcshop_db' => '', 'btcshop_product' => 'ad-upload', 'btcshop_url' => ''];
     if ($cfg['btcshop_db'] === '') {
-        $guess = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'btcshop' . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'shop.sqlite';
+        // the shop is normally a sibling folder of this one inside the web server's folder
+        foreach ([dirname(__DIR__, 1), dirname(__DIR__, 2)] as $base) {
+            $guess = $base . DIRECTORY_SEPARATOR . 'btcshop' . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'shop.sqlite';
+            if (is_file($guess)) break;
+        }
         $cfg['btcshop_db'] = $guess;
     }
     return $cfg;

@@ -14,7 +14,7 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 DB_DEFAULTS = {"host": "localhost", "port": 3306, "user": "root", "password": "", "database": "adnetwrk"}
-SITE_DEFAULTS = {"base_url": "https://secupgrade.com/livepy/pythoncoin", "public_host": "secupgrade.com"}
+SITE_DEFAULTS = {"base_url": "http://localhost/adnetworking", "public_host": "localhost"}
 
 
 def _read(name, defaults):

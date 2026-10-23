@@ -16,7 +16,11 @@ import setup_engine as se
 def choose_defaults():
     x = se.find_xampp() or r"C:\xampp"
     s = dict(se.DEFAULT_SETTINGS)
-    s.update({"xampp_dir": se.find_xampp(), "web_dir": os.path.join(x, "htdocs", "nickles"), "public_url": "http://localhost/nickles",
+    htdocs = os.path.join(x, "htdocs")
+    inside = os.path.abspath(se.HERE).lower().startswith(htdocs.lower() + os.sep)   # the program already lives in the web server's folder
+    web = se.HERE if inside else os.path.join(htdocs, "nickles")
+    url = "http://localhost/" + os.path.relpath(web, htdocs).replace(os.sep, "/") if inside else "http://localhost/nickles"
+    s.update({"xampp_dir": se.find_xampp(), "web_dir": web, "public_url": url,
               "btcshop_dir": os.path.join(x, "htdocs", "btcshop") if os.path.isdir(os.path.join(x, "htdocs", "btcshop")) else ""})
     if os.path.exists(os.path.join(se.HERE, "wallet.json")):
         s["wallet_mode"] = "keep"      # never replace a wallet by default

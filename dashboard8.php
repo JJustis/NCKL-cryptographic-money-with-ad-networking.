@@ -29,14 +29,7 @@ $db_config = [
 function scanActiveAdsStorage() {
     // Try multiple possible paths for the ads_storage directory
     $possiblePaths = [
-        realpath(dirname(__FILE__) . '/../livepy/pythoncoin/ads_storage/active'),
-        realpath(dirname(__FILE__) . '/../../pythoncoin/ads_storage/active'),
-        realpath(dirname(__FILE__) . '/ads_storage/active'),
-        realpath('./ads_storage/active'),
-        realpath('../ads_storage/active'),
-        realpath('/livepy/pythoncoin/ads_storage/active'),
-        realpath($_SERVER['DOCUMENT_ROOT'] . '/../livepy/pythoncoin/ads_storage/active'),
-        realpath($_SERVER['DOCUMENT_ROOT'] . '/livepy/pythoncoin/ads_storage/active')
+        realpath(__DIR__ . '/ads_storage/active')
     ];
     
     $adsPath = null;
@@ -216,14 +209,7 @@ function scanActiveAdsStorage() {
 function serveAdContent($adId, $contentType = 'svg') {
     // Try multiple possible paths for the ads_storage directory
     $possiblePaths = [
-        realpath(dirname(__FILE__) . '/../livepy/pythoncoin/ads_storage/active'),
-        realpath(dirname(__FILE__) . '/../../pythoncoin/ads_storage/active'),
-        realpath(dirname(__FILE__) . '/ads_storage/active'),
-        realpath('./ads_storage/active'),
-        realpath('../ads_storage/active'),
-        realpath('/livepy/pythoncoin/ads_storage/active'),
-        realpath($_SERVER['DOCUMENT_ROOT'] . '/../livepy/pythoncoin/ads_storage/active'),
-        realpath($_SERVER['DOCUMENT_ROOT'] . '/livepy/pythoncoin/ads_storage/active')
+        realpath(__DIR__ . '/ads_storage/active')
     ];
     
     $adsPath = null;

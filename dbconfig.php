@@ -34,5 +34,5 @@ function pyc_pdo(array $options = []) {
 
 /** ['base_url' => 'https://example.com/nickles', 'public_host' => 'example.com'] */
 function pyc_site() {
-    return pyc_read_json_config('site_config.json', ['base_url' => 'https://secupgrade.com/livepy/pythoncoin', 'public_host' => 'secupgrade.com']);
+    return pyc_read_json_config('site_config.json', ['base_url' => 'http://localhost/adnetworking', 'public_host' => 'localhost']);
 }

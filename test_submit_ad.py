@@ -18,7 +18,8 @@ import consensus
 import economy
 import pythoncoin as pc
 
-URL = "http://localhost/livepy/pythoncoin/submit_ad.php"
+HERE_ = os.path.dirname(os.path.abspath(__file__))
+URL = "http://localhost/" + os.path.relpath(HERE_, os.path.join(HERE_.lower().split("htdocs")[0], "htdocs")).replace(os.sep, "/") + "/submit_ad.php"
 HERE = os.path.dirname(os.path.abspath(__file__))
 PENDING = os.path.join(HERE, "ads_storage", "pending")
 ACTIVE = os.path.join(HERE, "ads_storage", "active")

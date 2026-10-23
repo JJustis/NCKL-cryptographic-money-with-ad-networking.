@@ -74,7 +74,7 @@ def port_open(host, port, timeout=0.6):
 
 def find_xampp(hint=""):
     """The XAMPP folder (contains mysql\\bin\\mysqld.exe and apache\\bin\\httpd.exe), or ''."""
-    candidates = [hint, os.environ.get("XAMPP_HOME", ""), os.path.abspath(os.path.join(HERE, "..", "..", "..")),
+    candidates = [hint, os.environ.get("XAMPP_HOME", ""), os.path.abspath(os.path.join(HERE, "..", "..")), os.path.abspath(os.path.join(HERE, "..", "..", "..")),
                   r"C:\xampp", r"D:\xampp", r"E:\xampp", r"C:\Program Files\xampp", r"C:\Program Files (x86)\xampp"]
     for c in candidates:
         if c and os.path.isfile(os.path.join(c, "mysql", "bin", "mysqld.exe")) and os.path.isfile(os.path.join(c, "apache", "bin", "httpd.exe")):
@@ -309,17 +309,26 @@ def publish_web(settings, log=_noop):
     if not web:
         raise SetupError("Choose the website folder first.")
     web = os.path.abspath(web)
-    if os.path.abspath(HERE).lower() == web.lower():
-        raise SetupError("The website folder must be a different folder from the program folder.")
     os.makedirs(web, exist_ok=True)
+    for d in WEB_EMPTY_DIRS:
+        os.makedirs(os.path.join(web, *d.split("/")), exist_ok=True)
+    if web.lower() == os.path.abspath(HERE).lower():
+        log("The program folder is the website folder: nothing to copy.")
+        return web
     for name in WEB_FILES + ["dbconfig.json", "site_config.json"]:
         src = os.path.join(HERE, name)
         if os.path.exists(src):
             shutil.copy2(src, os.path.join(web, name))
     for d in WEB_DIRS:
         shutil.copytree(os.path.join(HERE, d), os.path.join(web, d), dirs_exist_ok=True)
-    for d in WEB_EMPTY_DIRS:
-        os.makedirs(os.path.join(web, *d.split("/")), exist_ok=True)
+    # a separate website folder must share the ads and settings the wallet program works with, or the two drift apart
+    for shared in ("ads_storage", "users"):
+        link, target = os.path.join(web, shared), os.path.join(HERE, shared)
+        if os.path.isdir(target) and os.path.isdir(link) and not os.listdir(link):
+            os.rmdir(link)
+        if os.path.isdir(target) and not os.path.exists(link):
+            subprocess.run(["cmd", "/c", "mklink", "/J", link, target], capture_output=True)
+            log("Linked %s to the program folder's %s so both see the same files." % (link, shared))
     # the ads already approved/pending here travel with the site
     src_ads = os.path.join(HERE, "ads_storage")
     for sub in ("active", "pending"):
