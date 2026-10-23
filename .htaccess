@@ -28,6 +28,9 @@ RewriteRule (^|/)\.git(/|$) - [F,L]
 
 # CORS Headers
 
+# Preflight answers need the origin header too; real responses already get it from PHP (setting it twice makes browsers refuse)
+Header always set Access-Control-Allow-Origin "*" "expr=%{REQUEST_METHOD} == 'OPTIONS'"
+Header always set Access-Control-Max-Age "600" "expr=%{REQUEST_METHOD} == 'OPTIONS'"
 Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS, PUT, DELETE"
 Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
 

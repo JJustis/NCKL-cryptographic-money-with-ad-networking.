@@ -167,6 +167,12 @@ function scanActiveAdsStorage() {
                                 break;
                         }
                         
+                        // addresses must work on the publisher's own website, not just on this one
+                        $__base = rtrim(pyc_site()['base_url'] ?? '', '/');
+                        if ($__base !== '') {
+                            foreach ($adUrls as $__k => $__u) $adUrls[$__k] = $__base . '/dashboard8.php' . $__u;
+                        }
+
                         $ads[] = [
                             'id' => $adId,
                             'ad_id' => $adId,
