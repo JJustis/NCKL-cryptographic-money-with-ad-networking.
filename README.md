@@ -37,4 +37,7 @@ own setup and join the same network.
 * Ports 8332/8333 are Bitcoin's well-known ports; a Bitcoin node on the same machine would clash with them.
 * Never expose MariaDB to the internet; the wizard creates a database login limited to its own database.
 
+Official website: https://secupgrade.com/adnetworking/  
+Official source: https://github.com/JJustis/NCKL-cryptographic-money-with-ad-networking.
+
 MIT licence - see `LICENSE`.

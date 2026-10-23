@@ -121,7 +121,7 @@ for ($k = 0; $k < 8; $k++) {
       <h2>Staying safe</h2>
       <ul>
         <li>Back up <code>wallet.json</code> and keep it private. Never paste your private key into a website or send it to anyone, including anyone claiming to be &ldquo;support&rdquo;.</li>
-        <li>Download <?= $coin ?> only from the <a href="<?= site_h($c['repo']) ?>" rel="noopener">official GitHub repository</a>.</li>
+        <li>Download <?= $coin ?> only from the <a href="<?= site_h($c['repo']) ?>" rel="noopener">official GitHub repository</a> or from this website<?= $c['base'] !== '' ? ' (' . site_h(preg_replace('#^https?://#', '', $c['base'])) . ')' : '' ?>. Copies from anywhere else could be tampered with.</li>
         <li>Start small while the network is young.</li>
         <li>If you run a public node or website, keep Windows, XAMPP and your passwords up to date, and never expose your database to the internet.</li>
         <li>Be wary of anyone promising profits. Nobody can promise what a coin will be worth.</li>

@@ -64,7 +64,7 @@ function site_head($title, $desc, $active = '') {
 function site_foot() {
     $c = site_cfg();
     echo "</main>\n<footer class=\"foot\"><div class=\"wrap foot-grid\">";
-    echo '<div><div class="brand brand-foot">' . site_coin(30) . '<span>' . site_h($c['coin']) . '</span></div><p class="muted">A fair-launch, proof-of-work coin with a built-in ad network. Open source under the MIT licence.</p></div>';
+    echo '<div><div class="brand brand-foot">' . site_coin(30) . '<span>' . site_h($c['coin']) . '</span></div><p class="muted">A fair-launch, proof-of-work coin with a built-in ad network. Open source under the MIT licence.</p><p class="muted">Official website: <a href="' . site_h($c['base'] !== '' ? $c['base'] . '/' : 'index.php') . '">' . site_h(preg_replace('#^https?://#', '', $c['base'] !== '' ? $c['base'] : 'this site')) . '</a></p></div>';
     echo '<div><h3>Explore</h3><ul><li><a href="learn.php">Learn about ' . site_h($c['coin']) . '</a></li><li><a href="index.php#start">Get started</a></li><li><a href="index.php#faq">FAQ</a></li></ul></div>';
     echo '<div><h3>Use the network</h3><ul><li><a href="dashboard8.php">Publisher dashboard</a></li><li><a href="advertiser_terms.php">Advertiser agreement</a></li><li><a href="developer_portal.html">Developer portal</a></li></ul></div>';
     echo '<div><h3>Source &amp; docs</h3><ul><li><a href="' . site_h($c['repo']) . '" rel="noopener">GitHub repository</a></li><li><a href="' . site_h($c['repo']) . '/blob/main/CONSENSUS.md" rel="noopener">Consensus rules</a></li><li><a href="' . site_h($c['repo']) . '/blob/main/ECONOMY.md" rel="noopener">Ad economy</a></li></ul></div>';
