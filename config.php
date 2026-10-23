@@ -31,7 +31,7 @@ return [
     ],
     "security" => [
         // Set true once every embed/client sends encrypted reports; plaintext is then rejected
-        "require_encrypted" => false
+        "require_encrypted" => true
     ],
     "features" => [
         "real_time_discovery" => true,

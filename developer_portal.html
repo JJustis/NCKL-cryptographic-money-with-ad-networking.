@@ -904,6 +904,8 @@
         </div>
     </div>
 
+    <script src="pyc_pinwheel.js"></script>
+    <script>function pycFetch(u, i) { return (window.pycPinwheel && window.crypto && crypto.subtle) ? pycPinwheel.fetch(u, i) : fetch(u, i); }</script>
     <script>
         // Global application state
         var currentUser = null;
@@ -1120,7 +1122,7 @@
         function connectToCentralServer() {
             updateServerStatus('connecting');
             
-            fetch(serverConfig.commands + '?action=heartbeat&developer=' + currentUser.username)
+            pycFetch(serverConfig.commands + '?action=heartbeat&developer=' + currentUser.username)
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
                     if (data.success) {
@@ -1168,7 +1170,7 @@
             scanBtn.textContent = '🔍 Scanning...';
             scanBtn.disabled = true;
             
-            fetch(serverConfig.commands, {
+            pycFetch(serverConfig.commands, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -1444,7 +1446,7 @@
         function loadLiveAds() {
             addLog('Loading live ads from P2P network...', 'info');
             
-            fetch(serverConfig.commands, {
+            pycFetch(serverConfig.commands, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -1510,7 +1512,7 @@
             addLog('Testing central server connection...', 'info');
             updateServerStatus('connecting');
             
-            fetch(serverConfig.commands + '?action=test_connection')
+            pycFetch(serverConfig.commands + '?action=test_connection')
                 .then(function(response) { return response.json(); })
                 .then(function(data) {
                     if (data.success) {
