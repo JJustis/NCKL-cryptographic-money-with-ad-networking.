@@ -44,7 +44,7 @@ DEFAULT_SETTINGS = {
 }
 
 # What gets copied to the website folder. Python code, the wallet and the chain stay in the program folder.
-WEB_FILES = ["index.php", "dashboard8.php", "developer_portal.php", "developer_portal.html", "api.php", "auth.php", "commands.php",
+WEB_FILES = ["index.php", "learn.php", "site_common.php", "site.css", "site.js", "dashboard8.php", "developer_portal.php", "developer_portal.html", "api.php", "auth.php", "commands.php",
              "config.php", "security.php", "pinwheel.php", "dbconfig.php", "economy.php", "click_recorder.php", "curl_polyfill.php",
              "submit_ad.php", "update_clicks.php", "advertiser_terms.php", "agreements.php", "btcshop_bridge.php",
              "pyc_pinwheel.js", "consensus_params.json", "economy.json", ".htaccess"]

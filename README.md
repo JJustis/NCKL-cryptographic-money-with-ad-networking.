@@ -10,6 +10,7 @@ own setup and join the same network.
 * `advertiser_terms.php`, `terms/advertiser_agreement.txt` - the Advertiser Agreement every advertiser accepts first
 * `btcshop_bridge.php` - the mandatory upload fee: one paid `ad-upload` order per ad submission, bought in your btcshop
 * `setup.bat` - the setup wizard (Python, XAMPP, database, wallet, keys, publish the site)
+* `index.php`, `learn.php` - the public home page for newcomers and the beginner's guide to the coin
 
 ## Install (Windows)
 
