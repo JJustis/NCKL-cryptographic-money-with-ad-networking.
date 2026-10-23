@@ -1,0 +1,16 @@
+{
+  "network_fee_percent": 0,
+  "click_hold_minutes": 1440,
+  "max_clicks_per_ip_per_ad_per_day": 3,
+  "max_clicks_per_ip_per_day": 200,
+  "allow_self_clicks": false,
+  "deposit_confirmations": 6,
+  "retention_impression_days": 30,
+  "retention_ip_days": 90,
+  "ad_server_url": "",
+  "ad_upload_fee_required": true,
+  "btcshop_db": "",
+  "btcshop_product": "ad-upload",
+  "btcshop_url": "",
+  "one_click_per_page_load": true
+}

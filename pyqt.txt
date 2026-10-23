@@ -1,0 +1,2513 @@
+#!/usr/bin/env python3
+"""
+Fixed Unified PythonCoin P2P Ad Network Wallet
+Combines cryptocurrency wallet functionality with P2P advertising network
+Automatic payments to developers on ad clicks with proper genesis distribution
+"""
+
+import sys
+import os
+import json
+import hashlib
+import base64
+import time
+import random
+import qrcode
+from io import BytesIO
+from datetime import datetime, timedelta
+import traceback
+import threading
+import logging
+import uuid
+import socket
+import struct
+from pathlib import Path
+from dataclasses import dataclass, asdict
+from typing import Dict, List, Optional
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("PythonCoin-P2P-Wallet")
+
+# PyQt5 imports
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+                           QHBoxLayout, QLabel, QPushButton, QLineEdit, 
+                           QTextEdit, QTabWidget, QTableWidget, QTableWidgetItem,
+                           QHeaderView, QFileDialog, QMessageBox, QDialog,
+                           QFormLayout, QDoubleSpinBox, QComboBox, QCheckBox,
+                           QProgressBar, QSplashScreen, QToolBar,
+                           QStatusBar, QGroupBox, QScrollArea, QFrame,
+                           QSpinBox, QRadioButton, QButtonGroup, QListWidget,
+                           QMenu, QInputDialog, QAction, QColorDialog)
+
+from PyQt5.QtGui import QIcon, QPixmap, QFont, QPalette, QColor, QImage, QClipboard
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QByteArray, QBuffer
+
+# HTTP server imports
+import aiohttp
+from aiohttp import web, ClientSession
+import asyncio
+
+# Import PythonCoin core components
+from pythoncoin import (Blockchain, Wallet, Transaction, TransactionInput, TransactionOutput,
+                      DataTransaction, DSAVerificationTransaction, CryptoUtils, Node, Block)
+
+# ============================================================================
+# Data Classes for P2P Ad Network (same as before)
+# ============================================================================
+
+@dataclass
+class AdContent:
+    id: str
+    title: str
+    description: str
+    image_url: str
+    click_url: str
+    category: str
+    targeting: Dict
+    created_at: str
+    expires_at: str
+    peer_source: str
+    payout_rate: float = 0.001  # PYC per click
+    advertiser_address: str = ""  # PythonCoin address for payments
+    
+    def to_dict(self):
+        return asdict(self)
+
+@dataclass
+class PeerInfo:
+    peer_id: str
+    host: str
+    port: int
+    status: str
+    last_seen: str
+    ad_count: int
+    capabilities: List[str]
+    wallet_address: str = ""  # PythonCoin address
+
+@dataclass
+class UserProfile:
+    user_id: str
+    interests: List[str]
+    demographics: Dict
+    behavior_score: Dict
+    privacy_level: str
+    last_updated: str
+    wallet_address: str = ""  # Developer's PythonCoin address
+
+@dataclass
+class ClickEvent:
+    ad_id: str
+    user_id: str
+    developer_address: str
+    advertiser_address: str
+    payout_amount: float
+    timestamp: str
+    processed: bool = False
+    transaction_id: str = ""
+
+# ============================================================================
+# Enhanced P2P Manager with Genesis Coordination
+# ============================================================================
+
+class CryptoP2PManager(QThread):
+    """Enhanced P2P Manager with genesis coordination and cryptocurrency payment processing"""
+    
+    peerDiscovered = pyqtSignal(str, str, int)
+    peerConnected = pyqtSignal(str)
+    peerDisconnected = pyqtSignal(str)
+    adsReceived = pyqtSignal(list)
+    statusUpdate = pyqtSignal(str)
+    clickReceived = pyqtSignal(object)  # ClickEvent
+    paymentSent = pyqtSignal(str, float)  # address, amount
+    genesisReady = pyqtSignal(list)  # List of peer addresses for genesis
+    
+    def __init__(self, client_id: str, port: int, blockchain: Blockchain, wallet: Wallet):
+        super().__init__()
+        self.client_id = client_id
+        self.port = port
+        self.blockchain = blockchain
+        self.wallet = wallet
+        self.peers: Dict[str, PeerInfo] = {}
+        self.peer_sockets: Dict[str, socket.socket] = {}
+        self.server_socket = None
+        self.running = False
+        self.pending_clicks: List[ClickEvent] = []
+        self.genesis_coordination_complete = False
+        self.discovery_timeout = 30  # Wait 30 seconds for peer discovery before genesis
+        
+    def run(self):
+        """Start P2P socket manager with genesis coordination"""
+        self.running = True
+        self.statusUpdate.emit("Starting crypto P2P discovery...")
+        
+        # Start discovery server
+        threading.Thread(target=self._discovery_server, daemon=True).start()
+        
+        # Start peer discovery broadcast
+        threading.Thread(target=self._discovery_broadcast, daemon=True).start()
+        
+        # Start peer connection handler
+        threading.Thread(target=self._peer_handler, daemon=True).start()
+        
+        # Start click processing thread
+        threading.Thread(target=self._process_clicks, daemon=True).start()
+        
+        # Start genesis coordination
+        threading.Thread(target=self._coordinate_genesis, daemon=True).start()
+        
+        self.statusUpdate.emit("Crypto P2P Manager started")
+    
+    def _coordinate_genesis(self):
+        """Coordinate genesis block creation with connected peers"""
+        if self.blockchain.genesis_complete:
+            logger.info("Genesis block already exists")
+            return
+        
+        logger.info(f"Starting genesis coordination - waiting {self.discovery_timeout} seconds for peers...")
+        start_time = time.time()
+        
+        # Wait for peer discovery or timeout
+        while time.time() - start_time < self.discovery_timeout and self.running:
+            time.sleep(1)
+            
+            # Check if we have enough peers for a meaningful distribution
+            connected_peers = [p for p in self.peers.values() if p.status == 'connected' and p.wallet_address]
+            
+            if len(connected_peers) >= 2:  # Wait for at least 2 other peers
+                logger.info(f"Found {len(connected_peers)} peers, proceeding with genesis coordination")
+                break
+        
+        # Collect all peer addresses including our own
+        genesis_addresses = [self.wallet.address]
+        for peer in self.peers.values():
+            if peer.status == 'connected' and peer.wallet_address:
+                genesis_addresses.append(peer.wallet_address)
+        
+        if len(genesis_addresses) == 1:
+            logger.warning("No peers found, creating single-address genesis block")
+        else:
+            logger.info(f"Creating genesis block with {len(genesis_addresses)} addresses")
+        
+        # Set genesis addresses and create genesis block
+        self.blockchain.set_genesis_addresses(genesis_addresses)
+        self.genesis_coordination_complete = True
+        
+        # Notify main application
+        self.genesisReady.emit(genesis_addresses)
+        
+        self.statusUpdate.emit(f"Genesis block created with {len(genesis_addresses)} participants")
+    
+    def _discovery_server(self):
+        """UDP discovery server"""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        
+        try:
+            sock.bind(('', self.port + 1000))
+            sock.settimeout(1.0)
+            
+            while self.running:
+                try:
+                    data, addr = sock.recvfrom(1024)
+                    self._handle_discovery_message(data, addr)
+                except socket.timeout:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Discovery server error: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Discovery server failed: {e}")
+        finally:
+            sock.close()
+    
+    def _discovery_broadcast(self):
+        """Broadcast presence with wallet info"""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        
+        while self.running:
+            try:
+                message = {
+                    'type': 'peer_announce',
+                    'peer_id': self.client_id,
+                    'port': self.port,
+                    'timestamp': datetime.now().isoformat(),
+                    'capabilities': ['ad_serving', 'p2p', 'custom_js', 'crypto_payments'],
+                    'wallet_address': self.wallet.address if self.wallet else "",
+                    'blockchain_height': len(self.blockchain.chain) if self.blockchain else 0,
+                    'genesis_complete': self.blockchain.genesis_complete if self.blockchain else False
+                }
+                
+                data = json.dumps(message).encode()
+                sock.sendto(data, ('255.255.255.255', self.port + 1000))
+                
+                time.sleep(10)  # More frequent broadcasts during startup
+                
+            except Exception as e:
+                logger.error(f"Broadcast error: {e}")
+                time.sleep(5)
+        
+        sock.close()
+    
+    def _handle_discovery_message(self, data: bytes, addr):
+        """Handle discovery messages"""
+        try:
+            message = json.loads(data.decode())
+            
+            if message.get('type') == 'peer_announce':
+                peer_id = message.get('peer_id')
+                if peer_id != self.client_id:
+                    self._add_discovered_peer(message, addr[0])
+                    
+        except Exception as e:
+            logger.debug(f"Discovery message error: {e}")
+    
+    def _add_discovered_peer(self, message: Dict, host: str):
+        """Add discovered peer"""
+        peer_id = message['peer_id']
+        
+        if peer_id not in self.peers:
+            peer = PeerInfo(
+                peer_id=peer_id,
+                host=host,
+                port=message['port'],
+                status='discovered',
+                last_seen=datetime.now().isoformat(),
+                ad_count=0,
+                capabilities=message.get('capabilities', []),
+                wallet_address=message.get('wallet_address', '')
+            )
+            
+            self.peers[peer_id] = peer
+            self.peerDiscovered.emit(peer_id, host, message['port'])
+            
+            # Attempt connection
+            threading.Thread(target=self._connect_to_peer, args=(peer,), daemon=True).start()
+        else:
+            # Update existing peer info
+            self.peers[peer_id].last_seen = datetime.now().isoformat()
+            self.peers[peer_id].wallet_address = message.get('wallet_address', '')
+    
+    def _connect_to_peer(self, peer: PeerInfo):
+        """Connect to peer"""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(10)
+            sock.connect((peer.host, peer.port + 2000))
+            
+            handshake = {
+                'type': 'handshake',
+                'peer_id': self.client_id,
+                'timestamp': datetime.now().isoformat(),
+                'wallet_address': self.wallet.address if self.wallet else "",
+                'capabilities': ['crypto_payments', 'ad_serving'],
+                'genesis_complete': self.blockchain.genesis_complete if self.blockchain else False
+            }
+            
+            self._send_message(sock, handshake)
+            
+            response = self._receive_message(sock)
+            if response and response.get('type') == 'handshake_ack':
+                self.peer_sockets[peer.peer_id] = sock
+                peer.status = 'connected'
+                peer.wallet_address = response.get('wallet_address', '')
+                self.peerConnected.emit(peer.peer_id)
+                
+                self._request_ads_from_peer(peer.peer_id)
+                self._handle_peer_messages(sock, peer.peer_id)
+            else:
+                sock.close()
+                
+        except Exception as e:
+            logger.debug(f"Failed to connect to peer {peer.peer_id}: {e}")
+    
+    def _peer_handler(self):
+        """Handle incoming connections"""
+        try:
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.server_socket.bind(('', self.port + 2000))
+            self.server_socket.listen(10)
+            self.server_socket.settimeout(1.0)
+            
+            while self.running:
+                try:
+                    client_sock, addr = self.server_socket.accept()
+                    threading.Thread(
+                        target=self._handle_peer_connection,
+                        args=(client_sock, addr),
+                        daemon=True
+                    ).start()
+                except socket.timeout:
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Peer handler error: {e}")
+        finally:
+            if self.server_socket:
+                self.server_socket.close()
+    
+    def _handle_peer_connection(self, client_sock, addr):
+        """Handle peer connection"""
+        try:
+            client_sock.settimeout(30)
+            
+            message = self._receive_message(client_sock)
+            if message and message.get('type') == 'handshake':
+                peer_id = message.get('peer_id')
+                
+                ack = {
+                    'type': 'handshake_ack',
+                    'peer_id': self.client_id,
+                    'timestamp': datetime.now().isoformat(),
+                    'wallet_address': self.wallet.address if self.wallet else "",
+                    'genesis_complete': self.blockchain.genesis_complete if self.blockchain else False
+                }
+                self._send_message(client_sock, ack)
+                
+                if peer_id:
+                    self.peer_sockets[peer_id] = client_sock
+                    if peer_id in self.peers:
+                        self.peers[peer_id].status = 'connected'
+                        self.peers[peer_id].wallet_address = message.get('wallet_address', '')
+                    
+                    self.peerConnected.emit(peer_id)
+                    self._handle_peer_messages(client_sock, peer_id)
+                    
+        except Exception as e:
+            logger.debug(f"Peer connection error: {e}")
+        finally:
+            client_sock.close()
+    
+    def _handle_peer_messages(self, sock, peer_id):
+        """Handle peer messages"""
+        while self.running:
+            try:
+                message = self._receive_message(sock)
+                if not message:
+                    break
+                
+                if message.get('type') == 'ad_response':
+                    ads = message.get('ads', [])
+                    self.adsReceived.emit(ads)
+                elif message.get('type') == 'click_notification':
+                    self._handle_click_notification(message)
+                elif message.get('type') == 'payment_request':
+                    self._handle_payment_request(message)
+                elif message.get('type') == 'blockchain_sync':
+                    self._handle_blockchain_sync(message)
+                    
+            except Exception:
+                break
+        
+        if peer_id in self.peer_sockets:
+            del self.peer_sockets[peer_id]
+        if peer_id in self.peers:
+            self.peers[peer_id].status = 'disconnected'
+        self.peerDisconnected.emit(peer_id)
+    
+    def _handle_click_notification(self, message):
+        """Handle click notification from peer"""
+        try:
+            click_data = message.get('click_data', {})
+            
+            click_event = ClickEvent(
+                ad_id=click_data.get('ad_id', ''),
+                user_id=click_data.get('user_id', ''),
+                developer_address=click_data.get('developer_address', ''),
+                advertiser_address=click_data.get('advertiser_address', ''),
+                payout_amount=click_data.get('payout_amount', 0.001),
+                timestamp=click_data.get('timestamp', datetime.now().isoformat())
+            )
+            
+            self.pending_clicks.append(click_event)
+            self.clickReceived.emit(click_event)
+            
+        except Exception as e:
+            logger.error(f"Error handling click notification: {e}")
+    
+    def _handle_payment_request(self, message):
+        """Handle payment request from peer"""
+        try:
+            payment_data = message.get('payment_data', {})
+            recipient = payment_data.get('recipient_address', '')
+            amount = payment_data.get('amount', 0)
+            
+            if recipient and amount > 0 and self.wallet:
+                # Verify we have enough balance
+                balance = self.wallet.get_balance()
+                if balance >= amount:
+                    # Create and send payment transaction
+                    tx = self.wallet.send(recipient, amount)
+                    if tx:
+                        self.paymentSent.emit(recipient, amount)
+                        logger.info(f"Payment sent: {amount} PYC to {recipient}")
+                        
+        except Exception as e:
+            logger.error(f"Error handling payment request: {e}")
+    
+    def _handle_blockchain_sync(self, message):
+        """Handle blockchain synchronization request"""
+        try:
+            sync_data = message.get('sync_data', {})
+            peer_height = sync_data.get('blockchain_height', 0)
+            our_height = len(self.blockchain.chain)
+            
+            if peer_height > our_height:
+                logger.info(f"Peer has longer chain ({peer_height} vs {our_height}), requesting sync")
+                # In a full implementation, we would request the longer chain
+                
+        except Exception as e:
+            logger.error(f"Error handling blockchain sync: {e}")
+    
+    def _process_clicks(self):
+        """Process pending click events and send payments"""
+        while self.running:
+            try:
+                if self.pending_clicks and self.wallet:
+                    click = self.pending_clicks.pop(0)
+                    
+                    if not click.processed and click.developer_address:
+                        # Send payment to developer
+                        balance = self.wallet.get_balance()
+                        
+                        if balance >= click.payout_amount:
+                            tx = self.wallet.send(click.developer_address, click.payout_amount)
+                            if tx:
+                                click.processed = True
+                                click.transaction_id = tx.tx_id
+                                self.paymentSent.emit(click.developer_address, click.payout_amount)
+                                
+                                logger.info(f"Click payment sent: {click.payout_amount} PYC to {click.developer_address}")
+                        else:
+                            logger.warning(f"Insufficient balance for click payment: {balance} < {click.payout_amount}")
+                
+                time.sleep(1)  # Check every second
+                
+            except Exception as e:
+                logger.error(f"Error processing clicks: {e}")
+                time.sleep(5)
+    
+    def _send_message(self, sock, message):
+        """Send message to peer"""
+        data = json.dumps(message).encode()
+        length = struct.pack('!I', len(data))
+        sock.sendall(length + data)
+    
+    def _receive_message(self, sock):
+        """Receive message from peer"""
+        try:
+            length_data = sock.recv(4)
+            if len(length_data) < 4:
+                return None
+            
+            length = struct.unpack('!I', length_data)[0]
+            
+            data = b''
+            while len(data) < length:
+                chunk = sock.recv(length - len(data))
+                if not chunk:
+                    return None
+                data += chunk
+            
+            return json.loads(data.decode())
+            
+        except Exception:
+            return None
+    
+    def _request_ads_from_peer(self, peer_id):
+        """Request ads from peer"""
+        if peer_id not in self.peer_sockets:
+            return
+        
+        request = {
+            'type': 'ad_request',
+            'requesting_peer': self.client_id,
+            'categories': ['all'],
+            'max_ads': 10,
+            'timestamp': datetime.now().isoformat(),
+            'payment_capable': True
+        }
+        
+        try:
+            self._send_message(self.peer_sockets[peer_id], request)
+        except Exception as e:
+            logger.error(f"Failed to request ads from {peer_id}: {e}")
+    
+    def notify_click(self, ad_id: str, user_id: str, developer_address: str):
+        """Notify peers of an ad click"""
+        click_data = {
+            'type': 'click_notification',
+            'click_data': {
+                'ad_id': ad_id,
+                'user_id': user_id,
+                'developer_address': developer_address,
+                'timestamp': datetime.now().isoformat(),
+                'notifier_address': self.wallet.address if self.wallet else ""
+            }
+        }
+        
+        # Send to all connected peers
+        for peer_id, sock in self.peer_sockets.items():
+            try:
+                self._send_message(sock, click_data)
+            except Exception as e:
+                logger.error(f"Failed to notify peer {peer_id} of click: {e}")
+    
+    def stop(self):
+        """Stop the P2P manager"""
+        self.running = False
+        self.statusUpdate.emit("Crypto P2P Manager stopped")
+
+# ============================================================================
+# Enhanced Mining Thread with Better Integration
+# ============================================================================
+
+class CryptoMiningThread(QThread):
+    """Enhanced mining thread with better blockchain integration"""
+    
+    status_update = pyqtSignal(str)
+    hashrate_update = pyqtSignal(float)
+    new_block = pyqtSignal(object)
+    payment_processed = pyqtSignal(str, float)  # address, amount
+    
+    def __init__(self, blockchain, wallet_address, threads=1):
+        super().__init__()
+        self.blockchain = blockchain
+        self.wallet_address = wallet_address
+        self.threads = threads
+        self.running = False
+        self.blocks_mined = 0
+        self.start_time = 0
+        self.hash_count = 0
+        self.ad_payments_processed = 0
+        
+    def run(self):
+        """Run the mining process with better integration"""
+        self.running = True
+        self.start_time = time.time()
+        self.status_update.emit("Crypto mining started")
+        
+        # Wait for genesis block if not ready
+        if not self.blockchain.genesis_complete:
+            self.status_update.emit("Waiting for genesis block...")
+            while not self.blockchain.genesis_complete and self.running:
+                time.sleep(1)
+        
+        self.status_update.emit("Genesis block ready, starting mining...")
+        
+        while self.running:
+            try:
+                # Check if there are pending transactions or create a dummy one
+                if len(self.blockchain.pending_transactions) == 0:
+                    self.status_update.emit("No pending transactions, creating data transaction")
+                    try:
+                        dummy_tx = DataTransaction(
+                            sender=self.wallet_address,
+                            data_content=f"Mining block at {time.time()}"
+                        )
+                        
+                        if self.blockchain.add_transaction(dummy_tx):
+                            self.status_update.emit("Added data transaction to pending pool")
+                        else:
+                            self.status_update.emit("Failed to add data transaction")
+                            time.sleep(5)
+                            continue
+                    except Exception as e:
+                        self.status_update.emit(f"Error creating data transaction: {str(e)}")
+                        time.sleep(5)
+                        continue
+                
+                # Start mining
+                tx_count = len(self.blockchain.pending_transactions)
+                self.status_update.emit(f"Mining block with {tx_count} transactions")
+                
+                # Mine a new block
+                new_block = self.blockchain.mine_pending_transactions(self.wallet_address)
+                
+                if new_block and self.running:
+                    self.blocks_mined += 1
+                    self.status_update.emit(f"Block mined! Height: {new_block.index}, Hash: {new_block.hash[:16]}...")
+                    self.new_block.emit(new_block)
+                    
+                    # Calculate hashrate
+                    elapsed_time = time.time() - self.start_time
+                    hashrate = new_block.nonce / elapsed_time if elapsed_time > 0 else 0
+                    self.hashrate_update.emit(hashrate)
+                    
+                    # Reset timing for next block
+                    self.start_time = time.time()
+                    
+                    # Brief pause before mining next block
+                    time.sleep(2)
+                else:
+                    self.status_update.emit("Mining failed, retrying...")
+                    time.sleep(5)
+                    
+            except Exception as e:
+                self.status_update.emit(f"Mining error: {str(e)}")
+                logger.error(f"Mining error: {str(e)}")
+                time.sleep(5)
+    
+    def stop(self):
+        """Stop the mining process"""
+        self.running = False
+        self.status_update.emit("Crypto mining stopped")
+
+# ============================================================================
+# Main Unified Wallet Application (Enhanced)
+# ============================================================================
+
+class UnifiedPythonCoinWallet(QMainWindow):
+    """Enhanced Unified PythonCoin wallet with proper genesis coordination"""
+    
+    def __init__(self):
+        super().__init__()
+        
+        # Core components - Initialize blockchain without genesis first
+        self.blockchain = Blockchain()  # No genesis addresses yet
+        self.wallet = None
+        self.node = None
+        
+        # P2P Ad Network components
+        self.client_id = str(uuid.uuid4())[:8]
+        self.port = 8082
+        self.p2p_manager = None
+        self.js_generator = None
+        
+        # Mining and networking
+        self.mining_thread = None
+        self.network_thread = None
+        
+        # Ad network data
+        self.peers: Dict[str, PeerInfo] = {}
+        self.ads: List[AdContent] = []
+        self.user_sessions: Dict[str, Dict] = {}
+        self.click_events: List[ClickEvent] = []
+        
+        # Stats
+        self.stats = {
+            'ads_served': 0,
+            'impressions': 0,
+            'clicks': 0,
+            'payments_sent': 0,
+            'revenue_generated': 0.0,
+            'blocks_mined': 0,
+            'uptime_start': time.time()
+        }
+        
+        # Initialize UI
+        self.init_ui()
+        
+        # Load or create wallet
+        self.load_wallet()
+        
+        # Initialize P2P components after wallet is loaded
+        self.init_p2p_components()
+        
+        # Update timer
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.update_ui)
+        self.update_timer.start(2000)  # Update every 2 seconds
+        
+        # Initial UI update
+        self.update_ui()
+    
+    def init_ui(self):
+        """Initialize the user interface (same as before but with genesis status)"""
+        self.setWindowTitle("PythonCoin P2P Ad Network Wallet")
+        self.setGeometry(100, 100, 1200, 800)
+        
+        # Apply unified stylesheet (same as before)
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #f8f9fa;
+            }
+            QTabWidget::pane {
+                border: 2px solid #0066cc;
+                background-color: #ffffff;
+                border-radius: 8px;
+            }
+            QTabBar::tab {
+                background-color: #e9ecef;
+                padding: 12px 20px;
+                margin-right: 2px;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                font-weight: bold;
+            }
+            QTabBar::tab:selected {
+                background-color: #0066cc;
+                color: white;
+            }
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #dee2e6;
+                border-radius: 8px;
+                margin: 10px 0;
+                padding-top: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 10px 0 10px;
+                background-color: #0066cc;
+                color: white;
+                border-radius: 4px;
+            }
+            QPushButton {
+                background-color: #0066cc;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+            QPushButton:pressed {
+                background-color: #004494;
+            }
+            QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox {
+                border: 2px solid #dee2e6;
+                border-radius: 6px;
+                padding: 8px;
+                background-color: white;
+            }
+            QLineEdit:focus, QTextEdit:focus {
+                border-color: #0066cc;
+            }
+            QTableWidget {
+                gridline-color: #dee2e6;
+                background-color: white;
+                alternate-background-color: #f8f9fa;
+                selection-background-color: #0066cc;
+            }
+            QHeaderView::section {
+                background-color: #e9ecef;
+                padding: 8px;
+                border: 1px solid #dee2e6;
+                font-weight: bold;
+            }
+        """)
+        
+        # Create menu bar
+        self.create_menu_bar()
+        
+        # Create status bar
+        self.statusBar = QStatusBar()
+        self.setStatusBar(self.statusBar)
+        self.statusBar.showMessage("Welcome to PythonCoin P2P Ad Network Wallet")
+        
+        # Create central widget
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        
+        # Create main layout
+        self.main_layout = QVBoxLayout()
+        self.central_widget.setLayout(self.main_layout)
+        
+        # Create wallet header
+        self.create_wallet_header()
+        
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        self.main_layout.addWidget(self.tab_widget)
+        
+        # Create tabs
+        self.create_dashboard_tab()
+        self.create_wallet_tab()
+        self.create_mining_tab()
+        self.create_network_tab()
+    
+    def create_menu_bar(self):
+        """Create the menu bar (same as before)"""
+        menu_bar = self.menuBar()
+        
+        # Wallet menu
+        wallet_menu = menu_bar.addMenu("Wallet")
+        
+        new_wallet_action = QAction("New Wallet", self)
+        new_wallet_action.triggered.connect(self.create_new_wallet)
+        wallet_menu.addAction(new_wallet_action)
+        
+        import_wallet_action = QAction("Import Wallet", self)
+        import_wallet_action.triggered.connect(self.import_wallet)
+        wallet_menu.addAction(import_wallet_action)
+        
+        export_wallet_action = QAction("Export Wallet", self)
+        export_wallet_action.triggered.connect(self.export_wallet)
+        wallet_menu.addAction(export_wallet_action)
+        
+        wallet_menu.addSeparator()
+        
+        backup_action = QAction("Backup Data", self)
+        backup_action.triggered.connect(self.backup_all_data)
+        wallet_menu.addAction(backup_action)
+        
+        # P2P Network menu
+        network_menu = menu_bar.addMenu("P2P Network")
+        
+        start_network_action = QAction("Start Ad Network", self)
+        start_network_action.triggered.connect(self.start_ad_network)
+        network_menu.addAction(start_network_action)
+        
+        stop_network_action = QAction("Stop Ad Network", self)
+        stop_network_action.triggered.connect(self.stop_ad_network)
+        network_menu.addAction(stop_network_action)
+        
+        # Mining menu
+        mining_menu = menu_bar.addMenu("Mining")
+        
+        start_mining_action = QAction("Start Mining", self)
+        start_mining_action.triggered.connect(self.toggle_mining)
+        mining_menu.addAction(start_mining_action)
+        
+        # Help menu
+        help_menu = menu_bar.addMenu("Help")
+        
+        about_action = QAction("About", self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+    
+    def create_wallet_header(self):
+        """Create enhanced wallet header with genesis status"""
+        header_frame = QFrame()
+        header_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        header_frame.setFrameShadow(QFrame.Shadow.Raised)
+        header_frame.setMaximumHeight(140)
+        header_frame.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #0066cc, stop:1 #004494);
+                border-radius: 12px;
+                margin: 5px;
+            }
+            QLabel {
+                color: white;
+                font-weight: bold;
+            }
+            QPushButton {
+                background-color: rgba(255,255,255,0.2);
+                color: white;
+                border: 2px solid rgba(255,255,255,0.3);
+            }
+            QPushButton:hover {
+                background-color: rgba(255,255,255,0.3);
+            }
+        """)
+        
+        header_layout = QHBoxLayout()
+        header_frame.setLayout(header_layout)
+        
+        # Left side - Wallet info
+        wallet_info_layout = QVBoxLayout()
+        
+        self.wallet_label = QLabel("PythonCoin P2P Ad Wallet")
+        self.wallet_label.setFont(QFont('Arial', 14, QFont.Weight.Bold))
+        wallet_info_layout.addWidget(self.wallet_label)
+        
+        self.address_label = QLabel("Address: Loading...")
+        self.address_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        wallet_info_layout.addWidget(self.address_label)
+        
+        self.balance_label = QLabel("Balance: 0.00000000 PYC")
+        self.balance_label.setFont(QFont('Arial', 16, QFont.Weight.Bold))
+        wallet_info_layout.addWidget(self.balance_label)
+        
+        # Genesis status
+        self.genesis_status_label = QLabel("Genesis: Coordinating...")
+        self.genesis_status_label.setFont(QFont('Arial', 12))
+        wallet_info_layout.addWidget(self.genesis_status_label)
+        
+        header_layout.addLayout(wallet_info_layout, 3)
+        
+        # Center - Quick stats
+        stats_layout = QVBoxLayout()
+        
+        self.quick_stats_label = QLabel("Network Status")
+        self.quick_stats_label.setFont(QFont('Arial', 12, QFont.Weight.Bold))
+        stats_layout.addWidget(self.quick_stats_label)
+        
+        self.peers_status = QLabel("Peers: 0 connected")
+        stats_layout.addWidget(self.peers_status)
+        
+        self.blockchain_status = QLabel("Blockchain: 0 blocks")
+        stats_layout.addWidget(self.blockchain_status)
+        
+        self.mining_status_label = QLabel("Mining: Stopped")
+        stats_layout.addWidget(self.mining_status_label)
+        
+        header_layout.addLayout(stats_layout, 2)
+        
+        # Right side - QR code and controls
+        qr_layout = QVBoxLayout()
+        
+        self.qr_label = QLabel()
+        self.qr_label.setFixedSize(100, 100)
+        self.qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.qr_label.setStyleSheet("border: 2px solid white; border-radius: 8px; background: white;")
+        qr_layout.addWidget(self.qr_label)
+        
+        copy_button = QPushButton("Copy Address")
+        copy_button.clicked.connect(self.copy_address_to_clipboard)
+        qr_layout.addWidget(copy_button)
+        
+        header_layout.addLayout(qr_layout, 1)
+        
+        self.main_layout.addWidget(header_frame)
+    
+    def create_dashboard_tab(self):
+        """Create enhanced dashboard with genesis info"""
+        dashboard_widget = QWidget()
+        dashboard_layout = QVBoxLayout()
+        dashboard_widget.setLayout(dashboard_layout)
+        
+        # Genesis status section
+        genesis_group = QGroupBox("🏗️ Genesis Block Status")
+        genesis_layout = QVBoxLayout()
+        
+        self.genesis_info_label = QLabel("Coordinating with peers for initial coin distribution...")
+        genesis_layout.addWidget(self.genesis_info_label)
+        
+        self.genesis_participants_label = QLabel("Participants: Waiting for peers...")
+        genesis_layout.addWidget(self.genesis_participants_label)
+        
+        genesis_group.setLayout(genesis_layout)
+        dashboard_layout.addWidget(genesis_group)
+        
+        # Top stats row
+        stats_row = QHBoxLayout()
+        
+        # Wallet stats
+        wallet_group = QGroupBox("💰 Wallet Statistics")
+        wallet_layout = QVBoxLayout()
+        
+        self.dashboard_balance = QLabel("0.00000000 PYC")
+        self.dashboard_balance.setFont(QFont('Arial', 14, QFont.Weight.Bold))
+        wallet_layout.addWidget(self.dashboard_balance)
+        
+        self.pending_balance = QLabel("Pending: 0.00000000 PYC")
+        wallet_layout.addWidget(self.pending_balance)
+        
+        self.total_transactions = QLabel("Total Transactions: 0")
+        wallet_layout.addWidget(self.total_transactions)
+        
+        wallet_group.setLayout(wallet_layout)
+        stats_row.addWidget(wallet_group)
+        
+        # Network stats
+        network_group = QGroupBox("🌐 Network Statistics")
+        network_layout = QVBoxLayout()
+        
+        self.connected_peers = QLabel("Connected Peers: 0")
+        network_layout.addWidget(self.connected_peers)
+        
+        self.blockchain_height_dash = QLabel("Blockchain Height: 0")
+        network_layout.addWidget(self.blockchain_height_dash)
+        
+        self.network_status_dash = QLabel("P2P Status: Offline")
+        network_layout.addWidget(self.network_status_dash)
+        
+        network_group.setLayout(network_layout)
+        stats_row.addWidget(network_group)
+        
+        # Mining stats
+        mining_group = QGroupBox("⛏️ Mining Statistics")
+        mining_layout = QVBoxLayout()
+        
+        self.blocks_mined_label = QLabel("Blocks Mined: 0")
+        mining_layout.addWidget(self.blocks_mined_label)
+        
+        self.mining_hashrate = QLabel("Hash Rate: 0 H/s")
+        mining_layout.addWidget(self.mining_hashrate)
+        
+        self.mining_difficulty = QLabel("Difficulty: 0")
+        mining_layout.addWidget(self.mining_difficulty)
+        
+        mining_group.setLayout(mining_layout)
+        stats_row.addWidget(mining_group)
+        
+        dashboard_layout.addLayout(stats_row)
+        
+        # Recent activity
+        activity_group = QGroupBox("📊 Recent Activity")
+        activity_layout = QVBoxLayout()
+        
+        self.activity_table = QTableWidget()
+        self.activity_table.setColumnCount(4)
+        self.activity_table.setHorizontalHeaderLabels(["Time", "Type", "Details", "Amount"])
+        
+        header = self.activity_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        
+        activity_layout.addWidget(self.activity_table)
+        activity_group.setLayout(activity_layout)
+        
+        dashboard_layout.addWidget(activity_group)
+        
+        # Quick actions
+        actions_layout = QHBoxLayout()
+        
+        send_money_btn = QPushButton("💸 Send PYC")
+        send_money_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(1))
+        actions_layout.addWidget(send_money_btn)
+        
+        start_mining_btn = QPushButton("⛏️ Start Mining")
+        start_mining_btn.clicked.connect(self.toggle_mining)
+        actions_layout.addWidget(start_mining_btn)
+        
+        start_network_btn = QPushButton("🌐 Start Network")
+        start_network_btn.clicked.connect(self.start_ad_network)
+        actions_layout.addWidget(start_network_btn)
+        
+        actions_layout.addStretch()
+        
+        refresh_btn = QPushButton("🔄 Refresh")
+        refresh_btn.clicked.connect(self.update_ui)
+        actions_layout.addWidget(refresh_btn)
+        
+        dashboard_layout.addLayout(actions_layout)
+        
+        self.tab_widget.addTab(dashboard_widget, "📊 Dashboard")
+    
+    def create_wallet_tab(self):
+        """Create wallet tab (same as before)"""
+        wallet_widget = QWidget()
+        wallet_layout = QVBoxLayout()
+        wallet_widget.setLayout(wallet_layout)
+        
+        # Send transaction section
+        send_group = QGroupBox("💸 Send PythonCoin")
+        send_layout = QFormLayout()
+        
+        self.recipient_input = QLineEdit()
+        self.recipient_input.setPlaceholderText("Recipient's PythonCoin address")
+        send_layout.addRow("Recipient:", self.recipient_input)
+        
+        amount_layout = QHBoxLayout()
+        self.amount_input = QDoubleSpinBox()
+        self.amount_input.setDecimals(8)
+        self.amount_input.setRange(0.00000001, 1000000000)
+        self.amount_input.setSingleStep(0.1)
+        amount_layout.addWidget(self.amount_input)
+        
+        pyc_label = QLabel("PYC")
+        pyc_label.setStyleSheet("font-weight: bold;")
+        amount_layout.addWidget(pyc_label)
+        
+        max_button = QPushButton("Max")
+        max_button.clicked.connect(self.set_max_amount)
+        amount_layout.addWidget(max_button)
+        
+        send_layout.addRow("Amount:", amount_layout)
+        
+        send_button = QPushButton("💸 Send Transaction")
+        send_button.setMinimumHeight(40)
+        send_button.clicked.connect(self.send_transaction)
+        send_layout.addRow(send_button)
+        
+        send_group.setLayout(send_layout)
+        wallet_layout.addWidget(send_group)
+        
+        # Transaction history
+        history_group = QGroupBox("📜 Transaction History")
+        history_layout = QVBoxLayout()
+        
+        self.tx_table = QTableWidget()
+        self.tx_table.setColumnCount(6)
+        self.tx_table.setHorizontalHeaderLabels(["Time", "Type", "From/To", "Amount", "Status", "TX ID"])
+        
+        header = self.tx_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        
+        self.tx_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.tx_table.itemDoubleClicked.connect(self.show_transaction_details)
+        
+        history_layout.addWidget(self.tx_table)
+        
+        # Transaction controls
+        tx_controls = QHBoxLayout()
+        
+        export_tx_btn = QPushButton("📤 Export History")
+        export_tx_btn.clicked.connect(self.export_transactions)
+        tx_controls.addWidget(export_tx_btn)
+        
+        refresh_tx_btn = QPushButton("🔄 Refresh")
+        refresh_tx_btn.clicked.connect(self.update_transactions)
+        tx_controls.addWidget(refresh_tx_btn)
+        
+        tx_controls.addStretch()
+        
+        history_layout.addLayout(tx_controls)
+        history_group.setLayout(history_layout)
+        wallet_layout.addWidget(history_group)
+        
+        self.tab_widget.addTab(wallet_widget, "💰 Wallet")
+    
+    def create_mining_tab(self):
+        """Create enhanced mining tab"""
+        mining_widget = QWidget()
+        mining_layout = QVBoxLayout()
+        mining_widget.setLayout(mining_layout)
+        
+        # Mining status
+        status_group = QGroupBox("⛏️ Mining Status")
+        status_layout = QHBoxLayout()
+        
+        # Left side - Status info
+        status_info = QVBoxLayout()
+        
+        self.mining_status = QLabel("Status: Not mining")
+        self.mining_status.setFont(QFont('Arial', 14, QFont.Weight.Bold))
+        status_info.addWidget(self.mining_status)
+        
+        self.mining_hashrate_label = QLabel("Hash Rate: 0 H/s")
+        status_info.addWidget(self.mining_hashrate_label)
+        
+        self.blocks_mined_count = QLabel("Blocks Mined: 0")
+        status_info.addWidget(self.blocks_mined_count)
+        
+        self.mining_rewards = QLabel("Mining Rewards: 0.00000000 PYC")
+        status_info.addWidget(self.mining_rewards)
+        
+        self.genesis_mining_status = QLabel("Genesis: Not ready")
+        status_info.addWidget(self.genesis_mining_status)
+        
+        status_layout.addLayout(status_info)
+        
+        # Right side - Mining controls
+        controls_layout = QVBoxLayout()
+        
+        self.start_mining_button = QPushButton("🚀 Start Mining")
+        self.start_mining_button.clicked.connect(self.toggle_mining)
+        self.start_mining_button.setMinimumHeight(50)
+        controls_layout.addWidget(self.start_mining_button)
+        
+        self.stop_mining_button = QPushButton("⏹️ Stop Mining")
+        self.stop_mining_button.clicked.connect(self.toggle_mining)
+        self.stop_mining_button.setEnabled(False)
+        self.stop_mining_button.setMinimumHeight(50)
+        controls_layout.addWidget(self.stop_mining_button)
+        
+        status_layout.addLayout(controls_layout)
+        status_group.setLayout(status_layout)
+        mining_layout.addWidget(status_group)
+        
+        # Mining settings
+        settings_group = QGroupBox("⚙️ Mining Settings")
+        settings_layout = QFormLayout()
+        
+        self.mining_threads = QComboBox()
+        for i in range(1, min(9, os.cpu_count() + 1)):
+            self.mining_threads.addItem(f"{i} {'Thread' if i == 1 else 'Threads'}")
+        settings_layout.addRow("CPU Threads:", self.mining_threads)
+        
+        self.mining_address = QLineEdit()
+        settings_layout.addRow("Mining Address:", self.mining_address)
+        
+        settings_group.setLayout(settings_layout)
+        mining_layout.addWidget(settings_group)
+        
+        # Mining log
+        log_group = QGroupBox("📜 Mining Log")
+        log_layout = QVBoxLayout()
+        
+        self.mining_log = QTextEdit()
+        self.mining_log.setReadOnly(True)
+        self.mining_log.setMaximumHeight(200)
+        log_layout.addWidget(self.mining_log)
+        
+        clear_log_btn = QPushButton("🗑️ Clear Log")
+        clear_log_btn.clicked.connect(lambda: self.mining_log.clear())
+        log_layout.addWidget(clear_log_btn)
+        
+        log_group.setLayout(log_layout)
+        mining_layout.addWidget(log_group)
+        
+        self.tab_widget.addTab(mining_widget, "⛏️ Mining")
+    
+    def create_network_tab(self):
+        """Create enhanced network tab"""
+        network_widget = QWidget()
+        network_layout = QVBoxLayout()
+        network_widget.setLayout(network_layout)
+        
+        # P2P Network status
+        p2p_group = QGroupBox("🌐 P2P Ad Network")
+        p2p_layout = QVBoxLayout()
+        
+        self.network_status = QLabel("Status: Offline")
+        self.network_status.setFont(QFont('Arial', 12, QFont.Weight.Bold))
+        p2p_layout.addWidget(self.network_status)
+        
+        # Network controls
+        network_controls = QHBoxLayout()
+        
+        self.start_network_btn = QPushButton("🚀 Start P2P Network")
+        self.start_network_btn.clicked.connect(self.start_ad_network)
+        network_controls.addWidget(self.start_network_btn)
+        
+        self.stop_network_btn = QPushButton("⏹️ Stop P2P Network")
+        self.stop_network_btn.clicked.connect(self.stop_ad_network)
+        self.stop_network_btn.setEnabled(False)
+        network_controls.addWidget(self.stop_network_btn)
+        
+        network_controls.addStretch()
+        p2p_layout.addLayout(network_controls)
+        
+        p2p_group.setLayout(p2p_layout)
+        network_layout.addWidget(p2p_group)
+        
+        # Blockchain node status
+        node_group = QGroupBox("🖥️ Blockchain Node")
+        node_layout = QVBoxLayout()
+        
+        self.node_status = QLabel("Status: Node not running")
+        self.node_status.setFont(QFont('Arial', 12, QFont.Weight.Bold))
+        node_layout.addWidget(self.node_status)
+        
+        # Node controls
+        node_controls = QHBoxLayout()
+        
+        host_port_layout = QHBoxLayout()
+        host_port_layout.addWidget(QLabel("Host:"))
+        
+        self.node_host = QLineEdit("127.0.0.1")
+        host_port_layout.addWidget(self.node_host)
+        
+        host_port_layout.addWidget(QLabel("Port:"))
+        
+        self.node_port = QSpinBox()
+        self.node_port.setRange(1024, 65535)
+        self.node_port.setValue(5000)
+        host_port_layout.addWidget(self.node_port)
+        
+        node_controls.addLayout(host_port_layout)
+        
+        self.start_node_button = QPushButton("🚀 Start Node")
+        self.start_node_button.clicked.connect(self.start_node)
+        node_controls.addWidget(self.start_node_button)
+        
+        self.stop_node_button = QPushButton("⏹️ Stop Node")
+        self.stop_node_button.clicked.connect(self.stop_node)
+        self.stop_node_button.setEnabled(False)
+        node_controls.addWidget(self.stop_node_button)
+        
+        node_layout.addLayout(node_controls)
+        node_group.setLayout(node_layout)
+        network_layout.addWidget(node_group)
+        
+        # Blockchain info
+        blockchain_group = QGroupBox("⛓️ Blockchain Information")
+        blockchain_layout = QFormLayout()
+        
+        self.blockchain_height_label = QLabel("0")
+        blockchain_layout.addRow("Current Height:", self.blockchain_height_label)
+        
+        self.blockchain_difficulty = QLabel("0")
+        blockchain_layout.addRow("Mining Difficulty:", self.blockchain_difficulty)
+        
+        self.pending_transactions = QLabel("0")
+        blockchain_layout.addRow("Pending Transactions:", self.pending_transactions)
+        
+        self.genesis_status_detail = QLabel("Waiting for genesis...")
+        blockchain_layout.addRow("Genesis Status:", self.genesis_status_detail)
+        
+        blockchain_group.setLayout(blockchain_layout)
+        network_layout.addWidget(blockchain_group)
+        
+        # Peers table
+        peers_group = QGroupBox("👥 Connected Peers")
+        peers_layout = QVBoxLayout()
+        
+        self.peers_table = QTableWidget()
+        self.peers_table.setColumnCount(5)
+        self.peers_table.setHorizontalHeaderLabels(["Peer ID", "Host", "Status", "Wallet", "Last Seen"])
+        
+        peers_header = self.peers_table.horizontalHeader()
+        peers_header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
+        peers_layout.addWidget(self.peers_table)
+        peers_group.setLayout(peers_layout)
+        network_layout.addWidget(peers_group)
+        
+        # Network log
+        network_log_group = QGroupBox("📡 Network Log")
+        network_log_layout = QVBoxLayout()
+        
+        self.network_log = QTextEdit()
+        self.network_log.setReadOnly(True)
+        self.network_log.setMaximumHeight(150)
+        network_log_layout.addWidget(self.network_log)
+        
+        network_log_group.setLayout(network_log_layout)
+        network_layout.addWidget(network_log_group)
+        
+        self.tab_widget.addTab(network_widget, "🌐 Network")
+    
+    # ============================================================================
+    # Core Wallet Functions (Enhanced)
+    # ============================================================================
+    
+    def load_wallet(self):
+        """Load or create wallet"""
+        try:
+            if os.path.exists("wallet.json"):
+                with open("wallet.json", "r") as f:
+                    wallet_data = json.load(f)
+                
+                self.wallet = Wallet(
+                    self.blockchain,
+                    private_key=wallet_data["private_key"],
+                    public_key=wallet_data["public_key"]
+                )
+                
+                self.update_wallet_display()
+                self.log_message("Wallet loaded successfully")
+            else:
+                self.create_new_wallet()
+                
+        except Exception as e:
+            self.log_message(f"Error loading wallet: {str(e)}")
+            self.create_new_wallet()
+    
+    def create_new_wallet(self):
+        """Create a new wallet"""
+        try:
+            self.wallet = Wallet(self.blockchain)
+            self.save_wallet()
+            self.update_wallet_display()
+            self.log_message("New wallet created successfully")
+            
+        except Exception as e:
+            self.log_message(f"Error creating wallet: {str(e)}")
+            QMessageBox.critical(self, "Wallet Error", f"Failed to create wallet: {str(e)}")
+    
+    def save_wallet(self):
+        """Save wallet to file"""
+        if not self.wallet:
+            return
+        
+        try:
+            wallet_data = {
+                "private_key": self.wallet.private_key,
+                "public_key": self.wallet.public_key,
+                "address": self.wallet.address
+            }
+            
+            with open("wallet.json", "w") as f:
+                json.dump(wallet_data, f)
+            
+            self.log_message("Wallet saved successfully")
+            
+        except Exception as e:
+            self.log_message(f"Error saving wallet: {str(e)}")
+    
+    def init_p2p_components(self):
+        """Initialize P2P components after wallet is loaded"""
+        if not self.wallet:
+            return
+        
+        try:
+            # Initialize P2P manager
+            self.p2p_manager = CryptoP2PManager(
+                self.client_id, self.port, self.blockchain, self.wallet
+            )
+            
+            # Connect signals
+            self.p2p_manager.peerDiscovered.connect(self.on_peer_discovered)
+            self.p2p_manager.peerConnected.connect(self.on_peer_connected)
+            self.p2p_manager.peerDisconnected.connect(self.on_peer_disconnected)
+            self.p2p_manager.adsReceived.connect(self.on_ads_received)
+            self.p2p_manager.statusUpdate.connect(self.on_status_update)
+            self.p2p_manager.clickReceived.connect(self.on_click_received)
+            self.p2p_manager.paymentSent.connect(self.on_payment_sent)
+            self.p2p_manager.genesisReady.connect(self.on_genesis_ready)
+            
+            self.log_message("P2P components initialized")
+            
+        except Exception as e:
+            self.log_message(f"Error initializing P2P components: {str(e)}")
+    
+    # ============================================================================
+    # UI Update Functions (Enhanced)
+    # ============================================================================
+    
+    def update_ui(self):
+        """Update all UI components"""
+        if self.wallet:
+            self.update_wallet_display()
+            self.update_dashboard()
+            self.update_transactions()
+            self.update_network_display()
+    
+    def update_wallet_display(self):
+        """Update wallet display"""
+        if not self.wallet:
+            return
+        
+        # Update header
+        self.address_label.setText(f"Address: {self.wallet.address}")
+        
+        balance = self.wallet.get_balance()
+        self.balance_label.setText(f"Balance: {balance:.8f} PYC")
+        
+        # Update genesis status
+        if self.blockchain.genesis_complete:
+            self.genesis_status_label.setText("Genesis: Complete ✓")
+        else:
+            self.genesis_status_label.setText("Genesis: Coordinating...")
+        
+        # Update QR code
+        self.generate_qr_code(self.wallet.address)
+        
+        # Update mining address
+        if hasattr(self, 'mining_address'):
+            self.mining_address.setText(self.wallet.address)
+    
+    def update_dashboard(self):
+        """Update dashboard statistics"""
+        if not self.wallet:
+            return
+        
+        # Genesis status
+        if self.blockchain.genesis_complete:
+            self.genesis_info_label.setText("Genesis block created and distributed successfully! ✓")
+            genesis_addresses = self.blockchain.genesis_addresses
+            self.genesis_participants_label.setText(f"Participants: {len(genesis_addresses)} wallets received initial coins")
+        else:
+            self.genesis_info_label.setText("Coordinating with peers for initial coin distribution...")
+            
+        # Wallet stats
+        balance = self.wallet.get_balance()
+        self.dashboard_balance.setText(f"{balance:.8f} PYC")
+        
+        # Calculate pending balance
+        pending = sum(self.calculate_transaction_amount(tx) 
+                     for tx in self.blockchain.pending_transactions)
+        self.pending_balance.setText(f"Pending: {pending:.8f} PYC")
+        
+        # Transaction count
+        tx_history = self.wallet.get_transaction_history()
+        self.total_transactions.setText(f"Total Transactions: {len(tx_history)}")
+        
+        # Network stats
+        connected_peers = len([p for p in self.peers.values() if p.status == 'connected'])
+        self.connected_peers.setText(f"Connected Peers: {connected_peers}")
+        
+        self.blockchain_height_dash.setText(f"Blockchain Height: {len(self.blockchain.chain)}")
+        
+        if self.p2p_manager and self.p2p_manager.running:
+            self.network_status_dash.setText("P2P Status: Online")
+        else:
+            self.network_status_dash.setText("P2P Status: Offline")
+        
+        # Mining stats
+        self.blocks_mined_label.setText(f"Blocks Mined: {self.stats['blocks_mined']}")
+        
+        if self.blockchain.chain:
+            last_block = self.blockchain.chain[-1]
+            self.mining_difficulty.setText(f"Difficulty: {last_block.difficulty}")
+        
+        # Header quick stats
+        self.peers_status.setText(f"Peers: {connected_peers} connected")
+        self.blockchain_status.setText(f"Blockchain: {len(self.blockchain.chain)} blocks")
+        
+        # Update recent activity
+        self.update_recent_activity()
+    
+    def update_recent_activity(self):
+        """Update recent activity table"""
+        self.activity_table.setRowCount(0)
+        
+        # Combine different types of activities
+        activities = []
+        
+        # Add recent transactions
+        if self.wallet:
+            recent_txs = self.wallet.get_transaction_history()[-10:]
+            for tx in recent_txs:
+                amount = self.calculate_transaction_amount(tx)
+                activities.append({
+                    'time': datetime.fromtimestamp(tx.timestamp),
+                    'type': f"💰 {tx.tx_type.title()}",
+                    'details': f"{'Sent' if amount < 0 else 'Received'} transaction",
+                    'amount': f"{abs(amount):.6f} PYC"
+                })
+        
+        # Add mining events
+        for i, block in enumerate(self.blockchain.chain[-5:]):  # Last 5 blocks
+            if any(tx.tx_type == "coinbase" and any(out.address == self.wallet.address for out in tx.outputs) 
+                   for tx in block.transactions):
+                activities.append({
+                    'time': datetime.fromtimestamp(block.timestamp),
+                    'type': "⛏️ Mining",
+                    'details': f"Block {block.index} mined",
+                    'amount': "+50.0 PYC"
+                })
+        
+        # Sort by time (newest first)
+        activities.sort(key=lambda x: x['time'], reverse=True)
+        
+        # Add to table
+        for i, activity in enumerate(activities[:20]):  # Show last 20 activities
+            self.activity_table.insertRow(i)
+            
+            time_item = QTableWidgetItem(activity['time'].strftime("%H:%M:%S"))
+            self.activity_table.setItem(i, 0, time_item)
+            
+            type_item = QTableWidgetItem(activity['type'])
+            self.activity_table.setItem(i, 1, type_item)
+            
+            details_item = QTableWidgetItem(activity['details'])
+            self.activity_table.setItem(i, 2, details_item)
+            
+            amount_item = QTableWidgetItem(activity['amount'])
+            self.activity_table.setItem(i, 3, amount_item)
+    
+    def update_transactions(self):
+        """Update transaction history"""
+        if not self.wallet:
+            return
+        
+        transactions = self.wallet.get_transaction_history()
+        transactions.sort(key=lambda tx: tx.timestamp, reverse=True)
+        
+        self.tx_table.setRowCount(0)
+        
+        for i, tx in enumerate(transactions):
+            self.tx_table.insertRow(i)
+            
+            # Time
+            time_str = datetime.fromtimestamp(tx.timestamp).strftime("%Y-%m-%d %H:%M")
+            time_item = QTableWidgetItem(time_str)
+            self.tx_table.setItem(i, 0, time_item)
+            
+            # Type
+            type_item = QTableWidgetItem(tx.tx_type.title())
+            self.tx_table.setItem(i, 1, type_item)
+            
+            # From/To
+            if tx.tx_type == "coinbase":
+                from_to = f"Mining Reward → You"
+            elif tx.tx_type == "genesis":
+                from_to = f"Genesis Distribution → You"
+            elif tx.sender == self.wallet.public_key:
+                recipient = tx.outputs[0].address if tx.outputs else "N/A"
+                from_to = f"You → {recipient[:8]}..."
+            else:
+                sender_addr = CryptoUtils.pubkey_to_address(tx.sender)
+                from_to = f"{sender_addr[:8]}... → You"
+            
+            from_to_item = QTableWidgetItem(from_to)
+            self.tx_table.setItem(i, 2, from_to_item)
+            
+            # Amount
+            amount = self.calculate_transaction_amount(tx)
+            amount_item = QTableWidgetItem(f"{amount:.8f} PYC")
+            if amount < 0:
+                amount_item.setForeground(QColor(220, 53, 69))  # Red for outgoing
+            else:
+                amount_item.setForeground(QColor(40, 167, 69))  # Green for incoming
+            self.tx_table.setItem(i, 3, amount_item)
+            
+            # Status
+            status = "Confirmed" if any(tx in block.transactions for block in self.blockchain.chain) else "Pending"
+            status_item = QTableWidgetItem(status)
+            self.tx_table.setItem(i, 4, status_item)
+            
+            # TX ID
+            tx_id_item = QTableWidgetItem(tx.tx_id[:16] + "...")
+            self.tx_table.setItem(i, 5, tx_id_item)
+    
+    def update_network_display(self):
+        """Update network and peers display"""
+        # Update peers table
+        self.peers_table.setRowCount(len(self.peers))
+        
+        for row, (peer_id, peer) in enumerate(self.peers.items()):
+            self.peers_table.setItem(row, 0, QTableWidgetItem(peer_id[:8] + "..."))
+            self.peers_table.setItem(row, 1, QTableWidgetItem(f"{peer.host}:{peer.port}"))
+            self.peers_table.setItem(row, 2, QTableWidgetItem(peer.status))
+            self.peers_table.setItem(row, 3, QTableWidgetItem(peer.wallet_address[:8] + "..." if peer.wallet_address else "N/A"))
+            self.peers_table.setItem(row, 4, QTableWidgetItem(peer.last_seen))
+        
+        # Update network status
+        if self.p2p_manager and self.p2p_manager.running:
+            self.network_status.setText("Status: Online")
+            self.start_network_btn.setEnabled(False)
+            self.stop_network_btn.setEnabled(True)
+        else:
+            self.network_status.setText("Status: Offline")
+            self.start_network_btn.setEnabled(True)
+            self.stop_network_btn.setEnabled(False)
+        
+        # Update blockchain info
+        if hasattr(self, 'blockchain_height_label'):
+            self.blockchain_height_label.setText(str(len(self.blockchain.chain)))
+        
+        if hasattr(self, 'blockchain_difficulty'):
+            if self.blockchain.chain:
+                difficulty = self.blockchain.chain[-1].difficulty
+                self.blockchain_difficulty.setText(str(difficulty))
+        
+        if hasattr(self, 'pending_transactions'):
+            self.pending_transactions.setText(str(len(self.blockchain.pending_transactions)))
+        
+        if hasattr(self, 'genesis_status_detail'):
+            if self.blockchain.genesis_complete:
+                self.genesis_status_detail.setText("Complete ✓")
+            else:
+                self.genesis_status_detail.setText("Coordinating...")
+        
+        # Update mining genesis status
+        if hasattr(self, 'genesis_mining_status'):
+            if self.blockchain.genesis_complete:
+                self.genesis_mining_status.setText("Genesis: Ready ✓")
+            else:
+                self.genesis_mining_status.setText("Genesis: Waiting...")
+    
+    # ============================================================================
+    # Transaction Functions (Enhanced)
+    # ============================================================================
+    
+    def calculate_transaction_amount(self, tx):
+        """Calculate net amount for transaction"""
+        if not self.wallet:
+            return 0
+        
+        if tx.tx_type in ["coinbase", "genesis"]:
+            for output in tx.outputs:
+                if output.address == self.wallet.address:
+                    return output.amount
+            return 0
+        
+        if tx.tx_type in ["data", "dsa_verification"]:
+            return 0
+        
+        sender_addr = CryptoUtils.pubkey_to_address(tx.sender)
+        if sender_addr == self.wallet.address:
+            # Outgoing transaction
+            total_out = sum(output.amount for output in tx.outputs 
+                           if output.address != self.wallet.address)
+            return -total_out
+        else:
+            # Incoming transaction
+            total_in = sum(output.amount for output in tx.outputs 
+                          if output.address == self.wallet.address)
+            return total_in
+    
+    def set_max_amount(self):
+        """Set maximum available amount"""
+        if not self.wallet:
+            return
+        
+        balance = self.wallet.get_balance()
+        max_amount = max(0, balance - 0.0001)  # Leave small amount for fees
+        self.amount_input.setValue(max_amount)
+    
+    def send_transaction(self):
+        """Send a transaction"""
+        if not self.wallet:
+            QMessageBox.warning(self, "Transaction Error", "No wallet loaded")
+            return
+        
+        if not self.blockchain.genesis_complete:
+            QMessageBox.warning(self, "Transaction Error", "Please wait for genesis block to complete")
+            return
+        
+        recipient = self.recipient_input.text().strip()
+        amount = self.amount_input.value()
+        
+        if not recipient:
+            QMessageBox.warning(self, "Transaction Error", "Please enter recipient address")
+            return
+        
+        if amount <= 0:
+            QMessageBox.warning(self, "Transaction Error", "Amount must be greater than zero")
+            return
+        
+        balance = self.wallet.get_balance()
+        if amount > balance:
+            QMessageBox.warning(self, "Transaction Error", 
+                               f"Insufficient funds. Available: {balance:.8f} PYC")
+            return
+        
+        try:
+            tx = self.wallet.send(recipient, amount)
+            if tx:
+                self.log_message(f"Transaction sent: {tx.tx_id}")
+                QMessageBox.information(self, "Transaction Sent", 
+                                       f"Transaction sent successfully!\nTX ID: {tx.tx_id}")
+                
+                # Clear inputs
+                self.recipient_input.clear()
+                self.amount_input.setValue(0)
+                
+                # Update stats
+                self.stats['payments_sent'] += 1
+                
+                # Update UI
+                self.update_ui()
+            else:
+                QMessageBox.warning(self, "Transaction Error", "Failed to create transaction")
+                
+        except Exception as e:
+            self.log_message(f"Transaction error: {str(e)}")
+            QMessageBox.critical(self, "Transaction Error", f"Error: {str(e)}")
+    
+    def show_transaction_details(self, item):
+        """Show detailed transaction information (same as before)"""
+        row = item.row()
+        
+        # Get transaction ID from table
+        tx_id_item = self.tx_table.item(row, 5)
+        if not tx_id_item:
+            return
+        
+        tx_id_partial = tx_id_item.text().replace("...", "")
+        
+        # Find full transaction
+        tx = None
+        for transaction in self.wallet.get_transaction_history():
+            if transaction.tx_id.startswith(tx_id_partial):
+                tx = transaction
+                break
+        
+        if not tx:
+            return
+        
+        # Create dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Transaction Details")
+        dialog.setMinimumWidth(600)
+        dialog.setMinimumHeight(400)
+        
+        layout = QVBoxLayout()
+        
+        # Transaction details
+        details = QTextEdit()
+        details.setReadOnly(True)
+        
+        details_text = f"""
+<h3>Transaction Details</h3>
+<p><b>Transaction ID:</b> {tx.tx_id}</p>
+<p><b>Type:</b> {tx.tx_type.title()}</p>
+<p><b>Timestamp:</b> {datetime.fromtimestamp(tx.timestamp).strftime('%Y-%m-%d %H:%M:%S')}</p>
+<p><b>Amount:</b> {self.calculate_transaction_amount(tx):.8f} PYC</p>
+        """
+        
+        if tx.tx_type not in ["coinbase", "genesis"]:
+            sender_addr = CryptoUtils.pubkey_to_address(tx.sender)
+            details_text += f"<p><b>Sender:</b> {sender_addr}</p>"
+        
+        if tx.outputs:
+            details_text += "<p><b>Recipients:</b></p><ul>"
+            for output in tx.outputs:
+                details_text += f"<li>{output.address}: {output.amount:.8f} PYC</li>"
+            details_text += "</ul>"
+        
+        details.setHtml(details_text)
+        layout.addWidget(details)
+        
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        dialog.setLayout(layout)
+        dialog.exec()
+    
+    def export_transactions(self):
+        """Export transaction history (same as before)"""
+        if not self.wallet:
+            return
+        
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Transactions", 
+            f"pythoncoin_transactions_{datetime.now().strftime('%Y%m%d')}.csv",
+            "CSV Files (*.csv)"
+        )
+        
+        if not filename:
+            return
+        
+        try:
+            transactions = self.wallet.get_transaction_history()
+            
+            with open(filename, 'w') as f:
+                f.write("Date,Time,Type,From,To,Amount,Status,TX_ID\n")
+                
+                for tx in transactions:
+                    dt = datetime.fromtimestamp(tx.timestamp)
+                    date_str = dt.strftime('%Y-%m-%d')
+                    time_str = dt.strftime('%H:%M:%S')
+                    
+                    if tx.tx_type in ["coinbase", "genesis"]:
+                        from_addr = f"{tx.tx_type.title()} Distribution"
+                        to_addr = self.wallet.address
+                    elif tx.sender == self.wallet.public_key:
+                        from_addr = self.wallet.address
+                        to_addr = tx.outputs[0].address if tx.outputs else "N/A"
+                    else:
+                        from_addr = CryptoUtils.pubkey_to_address(tx.sender)
+                        to_addr = self.wallet.address
+                    
+                    amount = self.calculate_transaction_amount(tx)
+                    status = "Confirmed" if any(tx in block.transactions for block in self.blockchain.chain) else "Pending"
+                    
+                    f.write(f"{date_str},{time_str},{tx.tx_type},{from_addr},{to_addr},{amount:.8f},{status},{tx.tx_id}\n")
+            
+            self.log_message(f"Transactions exported to {filename}")
+            QMessageBox.information(self, "Export Complete", f"Exported to {filename}")
+            
+        except Exception as e:
+            self.log_message(f"Export error: {str(e)}")
+            QMessageBox.critical(self, "Export Error", f"Failed to export: {str(e)}")
+    
+    # ============================================================================
+    # P2P Ad Network Functions (Enhanced)
+    # ============================================================================
+    
+    def start_ad_network(self):
+        """Start P2P ad network"""
+        if not self.wallet:
+            QMessageBox.warning(self, "Network Error", "No wallet loaded")
+            return
+        
+        try:
+            if self.p2p_manager and not self.p2p_manager.running:
+                self.p2p_manager.start()
+                self.log_message("P2P Ad Network started")
+            
+        except Exception as e:
+            self.log_message(f"Error starting ad network: {str(e)}")
+            QMessageBox.critical(self, "Network Error", f"Failed to start: {str(e)}")
+    
+    def stop_ad_network(self):
+        """Stop P2P ad network"""
+        try:
+            if self.p2p_manager:
+                self.p2p_manager.stop()
+                self.log_message("P2P Ad Network stopped")
+            
+        except Exception as e:
+            self.log_message(f"Error stopping ad network: {str(e)}")
+    
+    # ============================================================================
+    # Mining Functions (Enhanced)
+    # ============================================================================
+    
+    def toggle_mining(self):
+        """Start or stop mining"""
+        if not self.wallet:
+            QMessageBox.warning(self, "Mining Error", "No wallet loaded")
+            return
+        
+        if not self.blockchain.genesis_complete:
+            QMessageBox.warning(self, "Mining Error", "Please wait for genesis block coordination to complete")
+            return
+        
+        if self.mining_thread and self.mining_thread.isRunning():
+            # Stop mining
+            self.mining_thread.stop()
+            self.mining_thread.wait()
+            self.mining_thread = None
+            
+            self.mining_status.setText("Status: Not mining")
+            self.mining_status_label.setText("Mining: Stopped")
+            self.start_mining_button.setEnabled(True)
+            self.stop_mining_button.setEnabled(False)
+            
+            self.log_message("Mining stopped")
+        else:
+            # Start mining
+            mining_address = self.wallet.address
+            threads = int(self.mining_threads.currentText().split()[0])
+            
+            try:
+                self.mining_thread = CryptoMiningThread(
+                    blockchain=self.blockchain,
+                    wallet_address=mining_address,
+                    threads=threads
+                )
+                
+                # Connect signals
+                self.mining_thread.status_update.connect(self.on_mining_status_update)
+                self.mining_thread.hashrate_update.connect(self.on_mining_hashrate_update)
+                self.mining_thread.new_block.connect(self.on_new_block_mined)
+                self.mining_thread.payment_processed.connect(self.on_payment_sent)
+                
+                # Start thread
+                self.mining_thread.start()
+                
+                self.mining_status.setText("Status: Mining in progress")
+                self.mining_status_label.setText("Mining: Active")
+                self.start_mining_button.setEnabled(False)
+                self.stop_mining_button.setEnabled(True)
+                
+                self.log_message(f"Mining started with {threads} threads")
+                
+            except Exception as e:
+                self.log_message(f"Error starting mining: {str(e)}")
+                QMessageBox.critical(self, "Mining Error", f"Failed to start mining: {str(e)}")
+    
+    # ============================================================================
+    # Network Functions (Enhanced)
+    # ============================================================================
+    
+    def start_node(self):
+        """Start blockchain node"""
+        if self.node:
+            return
+        
+        host = self.node_host.text()
+        port = self.node_port.value()
+        
+        try:
+            from pythoncoin import Node
+            self.node = Node(host=host, port=port)
+            self.node.blockchain = self.blockchain
+            self.node.wallet = self.wallet
+            
+            # Start node in thread
+            threading.Thread(target=self.node.start, daemon=True).start()
+            
+            self.node_status.setText(f"Status: Node running on {host}:{port}")
+            self.start_node_button.setEnabled(False)
+            self.stop_node_button.setEnabled(True)
+            
+            self.log_message(f"Blockchain node started on {host}:{port}")
+            
+        except Exception as e:
+            self.log_message(f"Error starting node: {str(e)}")
+            QMessageBox.critical(self, "Node Error", f"Failed to start node: {str(e)}")
+    
+    def stop_node(self):
+        """Stop blockchain node"""
+        if self.node:
+            try:
+                # Stop node
+                self.node.stop()
+                self.node = None
+                
+                self.node_status.setText("Status: Node not running")
+                self.start_node_button.setEnabled(True)
+                self.stop_node_button.setEnabled(False)
+                
+                self.log_message("Blockchain node stopped")
+                
+            except Exception as e:
+                self.log_message(f"Error stopping node: {str(e)}")
+    
+    # ============================================================================
+    # Signal Handlers (Enhanced)
+    # ============================================================================
+    
+    def on_peer_discovered(self, peer_id: str, host: str, port: int):
+        """Handle peer discovered"""
+        self.log_message(f"Discovered peer: {peer_id} at {host}:{port}")
+        
+        # Update peer info in our local dict
+        if peer_id not in self.peers:
+            self.peers[peer_id] = PeerInfo(
+                peer_id=peer_id,
+                host=host,
+                port=port,
+                status='discovered',
+                last_seen=datetime.now().isoformat(),
+                ad_count=0,
+                capabilities=[]
+            )
+    
+    def on_peer_connected(self, peer_id: str):
+        """Handle peer connected"""
+        self.log_message(f"Connected to peer: {peer_id}")
+        if peer_id in self.peers:
+            self.peers[peer_id].status = 'connected'
+    
+    def on_peer_disconnected(self, peer_id: str):
+        """Handle peer disconnected"""
+        self.log_message(f"Disconnected from peer: {peer_id}")
+        if peer_id in self.peers:
+            self.peers[peer_id].status = 'disconnected'
+    
+    def on_ads_received(self, ads_data: List):
+        """Handle ads received from peers"""
+        new_ads = []
+        for ad_data in ads_data:
+            ad = AdContent(
+                id=ad_data.get('id', str(uuid.uuid4())),
+                title=ad_data.get('title', 'Unknown Ad'),
+                description=ad_data.get('description', ''),
+                image_url=ad_data.get('image_url', ''),
+                click_url=ad_data.get('click_url', ''),
+                category=ad_data.get('category', 'general'),
+                targeting=ad_data.get('targeting', {}),
+                created_at=ad_data.get('created_at', datetime.now().isoformat()),
+                expires_at=ad_data.get('expires_at', (datetime.now() + timedelta(days=7)).isoformat()),
+                peer_source=ad_data.get('peer_source', 'unknown'),
+                payout_rate=ad_data.get('payout_rate', 0.001),
+                advertiser_address=ad_data.get('advertiser_address', '')
+            )
+            
+            # Only add if not already cached
+            if not any(existing.id == ad.id for existing in self.ads):
+                self.ads.append(ad)
+                new_ads.append(ad)
+        
+        if new_ads:
+            self.log_message(f"Received {len(new_ads)} new ads from P2P network")
+    
+    def on_status_update(self, status: str):
+        """Handle status updates"""
+        self.log_message(status)
+    
+    def on_click_received(self, click_event: ClickEvent):
+        """Handle click event received"""
+        self.click_events.append(click_event)
+        self.log_message(f"Click received: {click_event.ad_id} -> {click_event.payout_amount} PYC")
+    
+    def on_payment_sent(self, address: str, amount: float):
+        """Handle payment sent confirmation"""
+        self.stats['payments_sent'] += 1
+        self.stats['revenue_generated'] += amount
+        self.log_message(f"Payment sent: {amount:.6f} PYC to {address[:8]}...")
+    
+    def on_genesis_ready(self, genesis_addresses: List[str]):
+        """Handle genesis block ready signal"""
+        self.log_message(f"Genesis block created with {len(genesis_addresses)} participants")
+        
+        # Update UI to reflect genesis completion
+        if hasattr(self, 'genesis_participants_label'):
+            self.genesis_participants_label.setText(f"Participants: {len(genesis_addresses)} wallets")
+        
+        # Show notification
+        QMessageBox.information(self, "Genesis Block Created", 
+                               f"Genesis block successfully created!\n\n"
+                               f"Participants: {len(genesis_addresses)}\n"
+                               f"Initial distribution completed.\n\n"
+                               f"You can now start mining and sending transactions.")
+    
+    def on_mining_status_update(self, status: str):
+        """Handle mining status updates"""
+        self.mining_log.append(f"{datetime.now().strftime('%H:%M:%S')} - {status}")
+        self.mining_log.ensureCursorVisible()
+    
+    def on_mining_hashrate_update(self, hashrate: float):
+        """Handle mining hashrate updates"""
+        self.mining_hashrate.setText(f"Hash Rate: {hashrate:.2f} H/s")
+        if hasattr(self, 'mining_hashrate_label'):
+            self.mining_hashrate_label.setText(f"Hash Rate: {hashrate:.2f} H/s")
+    
+    def on_new_block_mined(self, block):
+        """Handle new block mined"""
+        self.stats['blocks_mined'] += 1
+        if hasattr(self, 'blocks_mined_count'):
+            self.blocks_mined_count.setText(f"Blocks Mined: {self.stats['blocks_mined']}")
+        
+        # Update mining rewards
+        mining_rewards = 0
+        for blk in self.blockchain.chain:
+            for tx in blk.transactions:
+                if tx.tx_type == "coinbase":
+                    for output in tx.outputs:
+                        if output.address == self.wallet.address:
+                            mining_rewards += output.amount
+        
+        if hasattr(self, 'mining_rewards'):
+            self.mining_rewards.setText(f"Mining Rewards: {mining_rewards:.8f} PYC")
+        
+        self.log_message(f"Block mined! Height: {block.index}, Hash: {block.hash[:16]}...")
+    
+    # ============================================================================
+    # Utility Functions (Enhanced)
+    # ============================================================================
+    
+    def generate_qr_code(self, data):
+        """Generate QR code for wallet address"""
+        try:
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=3,
+                border=2,
+            )
+            qr.add_data(data)
+            qr.make(fit=True)
+            
+            img = qr.make_image(fill_color="black", back_color="white")
+            
+            # Convert to QPixmap
+            buffer = BytesIO()
+            img.save(buffer, format="PNG")
+            buffer.seek(0)
+            
+            qpm = QPixmap()
+            qpm.loadFromData(QByteArray(buffer.getvalue()))
+            
+            self.qr_label.setPixmap(qpm)
+            
+        except Exception as e:
+            self.log_message(f"QR code generation error: {e}")
+    
+    def copy_address_to_clipboard(self):
+        """Copy wallet address to clipboard"""
+        if self.wallet:
+            QApplication.clipboard().setText(self.wallet.address)
+            self.statusBar.showMessage("Address copied to clipboard", 3000)
+    
+    def log_message(self, message: str):
+        """Log message to console and status bar"""
+        logger.info(message)
+        self.statusBar.showMessage(message, 5000)
+        
+        # Also log to network log if available
+        if hasattr(self, 'network_log'):
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            self.network_log.append(f"[{timestamp}] {message}")
+            self.network_log.ensureCursorVisible()
+    
+    def import_wallet(self):
+        """Import wallet from private key (same as before)"""
+        private_key, ok = QInputDialog.getText(
+            self, "Import Wallet", "Enter your private key (hex format):",
+            QLineEdit.EchoMode.Normal
+        )
+        
+        if not ok or not private_key:
+            return
+        
+        try:
+            # Recreate public key from private key
+            import ecdsa
+            priv_key_bytes = bytes.fromhex(private_key)
+            signing_key = ecdsa.SigningKey.from_string(priv_key_bytes, curve=ecdsa.SECP256k1)
+            public_key = signing_key.get_verifying_key().to_string().hex()
+            
+            # Create wallet
+            self.wallet = Wallet(
+                self.blockchain,
+                private_key=private_key,
+                public_key=public_key
+            )
+            
+            self.save_wallet()
+            self.init_p2p_components()
+            self.update_wallet_display()
+            
+            QMessageBox.information(self, "Import Successful", 
+                                   f"Wallet imported: {self.wallet.address}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", f"Failed to import wallet: {str(e)}")
+    
+    def export_wallet(self):
+        """Export wallet private key (same as before)"""
+        if not self.wallet:
+            QMessageBox.warning(self, "Export Error", "No wallet loaded")
+            return
+        
+        reply = QMessageBox.warning(
+            self, "Security Warning",
+            "WARNING: Your private key gives complete control over your funds.\n"
+            "Never share it with anyone and store it securely.\n\n"
+            "Are you sure you want to display your private key?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Your Private Key")
+            dialog.setMinimumWidth(500)
+            
+            layout = QVBoxLayout()
+            
+            warning = QLabel("⚠️ Keep this private key secure! Anyone with this key can steal your funds.")
+            warning.setStyleSheet("color: red; font-weight: bold; padding: 10px; border: 2px solid red; border-radius: 6px;")
+            warning.setWordWrap(True)
+            layout.addWidget(warning)
+            
+            key_display = QTextEdit()
+            key_display.setPlainText(self.wallet.private_key)
+            key_display.setReadOnly(True)
+            key_display.setMaximumHeight(100)
+            layout.addWidget(key_display)
+            
+            button_layout = QHBoxLayout()
+            
+            copy_btn = QPushButton("📋 Copy to Clipboard")
+            copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(self.wallet.private_key))
+            button_layout.addWidget(copy_btn)
+            
+            close_btn = QPushButton("Close")
+            close_btn.clicked.connect(dialog.accept)
+            button_layout.addWidget(close_btn)
+            
+            layout.addLayout(button_layout)
+            dialog.setLayout(layout)
+            dialog.exec()
+    
+    def backup_all_data(self):
+        """Backup all wallet and network data"""
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Backup All Data", 
+            f"pythoncoin_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+            "JSON Files (*.json)"
+        )
+        
+        if not filename:
+            return
+        
+        try:
+            backup_data = {
+                'wallet': {
+                    'private_key': self.wallet.private_key if self.wallet else '',
+                    'public_key': self.wallet.public_key if self.wallet else '',
+                    'address': self.wallet.address if self.wallet else ''
+                },
+                'blockchain': {
+                    'chain': [block.to_dict() for block in self.blockchain.chain],
+                    'pending_transactions': [tx.to_dict() for tx in self.blockchain.pending_transactions],
+                    'genesis_complete': self.blockchain.genesis_complete,
+                    'genesis_addresses': self.blockchain.genesis_addresses
+                },
+                'ad_network': {
+                    'client_id': self.client_id,
+                    'ads': [ad.to_dict() for ad in self.ads],
+                    'click_events': [asdict(click) for click in self.click_events],
+                    'stats': self.stats
+                },
+                'backup_timestamp': datetime.now().isoformat()
+            }
+            
+            with open(filename, 'w') as f:
+                json.dump(backup_data, f, indent=2)
+            
+            QMessageBox.information(self, "Backup Complete", f"Data backed up to {filename}")
+            self.log_message(f"Full backup created: {filename}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Backup Error", f"Failed to create backup: {str(e)}")
+    
+    def show_about(self):
+        """Show enhanced about dialog"""
+        about_text = f"""
+        <h2>🚀 PythonCoin P2P Ad Network Wallet (Enhanced)</h2>
+        <p><b>Version:</b> 2.0.0</p>
+        <p><b>Client ID:</b> {self.client_id}</p>
+        
+        <h3>🏗️ Genesis Block Features:</h3>
+        <ul>
+            <li>Automatic peer discovery and coordination</li>
+            <li>Fair initial coin distribution to all connected peers</li>
+            <li>Synchronized blockchain initialization</li>
+            <li>Proper UTXO management from genesis</li>
+        </ul>
+        
+        <h3>💰 Cryptocurrency Features:</h3>
+        <ul>
+            <li>Send and receive PythonCoin (PYC)</li>
+            <li>Mine blocks to earn rewards (50 PYC per block)</li>
+            <li>Full blockchain node capabilities</li>
+            <li>Secure wallet with private key management</li>
+            <li>Dynamic difficulty adjustment</li>
+        </ul>
+        
+        <h3>🌐 P2P Network Features:</h3>
+        <ul>
+            <li>Decentralized peer discovery</li>
+            <li>Real-time blockchain synchronization</li>
+            <li>Genesis coordination protocol</li>
+            <li>Automatic cryptocurrency payments for ad clicks</li>
+        </ul>
+        
+        <h3>🔧 Technical Improvements:</h3>
+        <ul>
+            <li>Enhanced UTXO validation</li>
+            <li>Better transaction verification</li>
+            <li>Improved mining algorithm</li>
+            <li>Comprehensive error handling</li>
+            <li>Real-time UI updates</li>
+        </ul>
+        
+        <p><b>Created with Python, PyQt5, and enhanced PythonCoin blockchain technology.</b></p>
+        """
+        
+        QMessageBox.about(self, "About Enhanced PythonCoin Wallet", about_text)
+    
+    def closeEvent(self, event):
+        """Handle application close"""
+        try:
+            # Stop all threads and connections
+            if self.mining_thread and self.mining_thread.isRunning():
+                self.mining_thread.stop()
+                self.mining_thread.wait()
+            
+            if self.p2p_manager and self.p2p_manager.running:
+                self.p2p_manager.stop()
+            
+            if self.node:
+                self.node.stop()
+            
+            # Save wallet
+            if self.wallet:
+                self.save_wallet()
+            
+            event.accept()
+            
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
+            event.accept()
+
+# ============================================================================
+# Enhanced Genesis Coordination Script
+# ============================================================================
+
+def run_genesis_coordination():
+    """
+    Standalone function to coordinate genesis block creation among multiple clients.
+    This can be run before starting the main wallet application.
+    """
+    print("=== PythonCoin Genesis Coordination ===")
+    
+    # Discover peers on the network
+    discovered_peers = []
+    
+    print("Discovering peers for genesis coordination...")
+    
+    # UDP broadcast to find other clients
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.settimeout(2.0)
+    
+    try:
+        # Broadcast discovery message
+        discovery_msg = {
+            'type': 'genesis_discovery',
+            'timestamp': time.time(),
+            'requesting_genesis': True
+        }
+        
+        data = json.dumps(discovery_msg).encode()
+        sock.sendto(data, ('255.255.255.255', 8083))  # Different port for genesis coordination
+        
+        # Listen for responses
+        start_time = time.time()
+        while time.time() - start_time < 10:  # 10 second discovery window
+            try:
+                response_data, addr = sock.recvfrom(1024)
+                response = json.loads(response_data.decode())
+                
+                if response.get('type') == 'genesis_response':
+                    peer_info = {
+                        'host': addr[0],
+                        'wallet_address': response.get('wallet_address', ''),
+                        'timestamp': response.get('timestamp', time.time())
+                    }
+                    discovered_peers.append(peer_info)
+                    print(f"Found peer: {addr[0]} with wallet {peer_info['wallet_address'][:8]}...")
+                    
+            except socket.timeout:
+                continue
+            except Exception as e:
+                print(f"Discovery error: {e}")
+                
+    except Exception as e:
+        print(f"Genesis coordination error: {e}")
+    finally:
+        sock.close()
+    
+    print(f"Discovery complete. Found {len(discovered_peers)} peers.")
+    
+    if len(discovered_peers) > 0:
+        print("Genesis block will be created with fair distribution to all participants.")
+        return [peer['wallet_address'] for peer in discovered_peers if peer['wallet_address']]
+    else:
+        print("No peers found. Genesis block will be created for single wallet.")
+        return []
+
+# ============================================================================
+# Main Application Entry Point (Enhanced)
+# ============================================================================
+
+def main():
+    """Enhanced main application entry point with genesis coordination"""
+    app = QApplication(sys.argv)
+    app.setApplicationName("PythonCoin P2P Ad Network Wallet (Enhanced)")
+    app.setApplicationVersion("2.0")
+    
+    # Create splash screen
+    pixmap = QPixmap(400, 300)
+    pixmap.fill(Qt.GlobalColor.white)
+    splash = QSplashScreen(pixmap)
+    splash.show()
+    
+    # Update splash with progress
+    def update_splash(message):
+        splash.showMessage(f"Loading PythonCoin Wallet...\n{message}", 
+                          Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom)
+        app.processEvents()
+    
+    try:
+        update_splash("Initializing blockchain...")
+        
+        # Check if user wants to participate in genesis coordination
+        if len(sys.argv) > 1 and sys.argv[1] == "--genesis-coord":
+            update_splash("Coordinating genesis block with peers...")
+            genesis_addresses = run_genesis_coordination()
+            
+            if genesis_addresses:
+                print(f"Genesis coordination complete with {len(genesis_addresses)} participants")
+            else:
+                print("No peers found for genesis coordination")
+        
+        update_splash("Creating wallet interface...")
+        
+        # Create main window
+        main_window = UnifiedPythonCoinWallet()
+        
+        update_splash("Starting P2P discovery...")
+        
+        # Auto-start P2P network for genesis coordination
+        main_window.start_ad_network()
+        
+        # Close splash and show main window
+        splash.finish(main_window)
+        main_window.show()
+        
+        # Show initial instructions
+        if not main_window.blockchain.genesis_complete:
+            QMessageBox.information(
+                main_window, 
+                "Welcome to PythonCoin!", 
+                "🏗️ Genesis Block Coordination\n\n"
+                "Your wallet is now discovering peers for initial coin distribution.\n"
+                "The genesis block will be created automatically when:\n\n"
+                "• Other wallets are found on the network, OR\n"
+                "• 30 seconds have passed (single-wallet mode)\n\n"
+                "You can start mining once the genesis block is complete!"
+            )
+        
+        # Start the application
+        sys.exit(app.exec())
+        
+    except Exception as e:
+        QMessageBox.critical(None, "Startup Error", f"Failed to start application: {str(e)}")
+        logger.error(f"Application startup error: {e}")
+        traceback.print_exc()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

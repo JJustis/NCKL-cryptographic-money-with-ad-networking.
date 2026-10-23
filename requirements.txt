@@ -1,0 +1,7 @@
+mysql-connector-python==8.4.0
+requests
+qrcode
+PyQt5
+ecdsa
+
+cryptography

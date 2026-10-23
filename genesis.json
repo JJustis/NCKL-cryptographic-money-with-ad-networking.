@@ -1,0 +1,25 @@
+{
+  "index": 0,
+  "timestamp": 1792717612.0,
+  "merkle_root": "7c2b9ad65770192fc3272151854e00af85438c10eb4bf905bf67134087bc7d3f",
+  "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "nonce": 10163770,
+  "difficulty": 6,
+  "hash": "000000ea14091c7f6b5d8fdd37880996b4f68a47554e0ea726d4adfb2dc0d0fa",
+  "transactions": [
+    {
+      "tx_id": "7c2b9ad65770192fc3272151854e00af85438c10eb4bf905bf67134087bc7d3f",
+      "sender": "genesis",
+      "inputs": [],
+      "outputs": [],
+      "timestamp": 1792717612.0,
+      "signature": "",
+      "tx_type": "genesis",
+      "data": {
+        "message": "Nickles: a nickel for every click - 23/Oct/2026",
+        "coin": "Nickles",
+        "ticker": "NCKL"
+      }
+    }
+  ]
+}

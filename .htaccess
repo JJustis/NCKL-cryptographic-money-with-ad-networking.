@@ -1,0 +1,75 @@
+# P2P Ad Network - Apache Configuration
+RewriteEngine On
+
+# --- Security: never serve wallet keys, databases, dumps, logs or source ---
+Options -Indexes
+# Private key and server config: never over HTTP (the app reads wallet.json from disk, not the web)
+<FilesMatch "(?i)^(wallet\.json|dbconfig\.json|site_config\.json|economy\.json|\.htaccess)$">
+    Require all denied
+</FilesMatch>
+# Code, databases, dumps, logs, backups: this machine only (also enforced site-wide from htdocs/.htaccess)
+<FilesMatch "(?i)^(blockchain\.json|requirements\.txt)$|\.(db|sql|log|py|pyc|bat|spec|md|ini|bak|original|backup.*|lnk|txt)$|\.(php|html)\.backup.*$|\.backup_.*$">
+    Require local
+</FilesMatch>
+# Admin / setup / debug scripts: reachable from this machine only
+<FilesMatch "(?i)^(setup|setup_database|cron_job|php_backend|websocket_server|verify_ad_clicks|install|test_[^/]*|debug_[^/]*|create_test_[^/]*)\.php$">
+    Require local
+</FilesMatch>
+# No script execution inside upload/user data folders
+<IfModule mod_rewrite.c>
+    RewriteCond %{REMOTE_ADDR} !^127\.
+    RewriteCond %{REMOTE_ADDR} !^::1$
+    RewriteCond %{REMOTE_ADDR} !=%{SERVER_ADDR}
+    RewriteRule ^(logs|build|dist|__pycache__|notifications|client_ads)(/|$) - [F,L]
+    RewriteRule ^js/.*\.(php|phtml|phar)$ - [F,L]
+</IfModule>
+
+# CORS Headers
+
+Header always set Access-Control-Allow-Methods "GET, POST, OPTIONS, PUT, DELETE"
+Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
+
+# Handle preflight OPTIONS requests
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^(.*)$ $1 [R=200,L]
+
+# API Routing
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^api/commands$ commands.php [QSA,L]
+RewriteRule ^api/auth$ auth.php [QSA,L]
+RewriteRule ^api/(.*)$ api.php?action=$1 [QSA,L]
+
+# JS File serving
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^js/(.+\.js)$ js/$1 [L]
+
+# Security Headers
+Header always set X-Content-Type-Options nosniff
+Header always set X-Frame-Options SAMEORIGIN
+Header always set X-XSS-Protection "1; mode=block"
+
+# Cache Control
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType application/javascript "access plus 1 hour"
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/jpg "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+</IfModule>
+
+# Gzip Compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/plain
+    AddOutputFilterByType DEFLATE text/html
+    AddOutputFilterByType DEFLATE text/xml
+    AddOutputFilterByType DEFLATE text/css
+    AddOutputFilterByType DEFLATE application/xml
+    AddOutputFilterByType DEFLATE application/xhtml+xml
+    AddOutputFilterByType DEFLATE application/rss+xml
+    AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE application/x-javascript
+</IfModule>

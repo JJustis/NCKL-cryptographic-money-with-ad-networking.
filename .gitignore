@@ -1,0 +1,15 @@
+# secrets and machine-specific files (the setup wizard creates these)
+wallet.json*
+dbconfig.json
+site_config.json
+blockchain.json
+*.pem
+*.key
+*.log
+*.db
+__pycache__/
+logs/
+ads_storage/*/*
+!ads_storage/*/.gitkeep
+users/
+.claude/

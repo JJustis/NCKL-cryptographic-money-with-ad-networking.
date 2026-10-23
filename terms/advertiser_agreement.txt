@@ -1,0 +1,61 @@
+# TEMPLATE - this text is a starting point, not legal advice. Have a lawyer in your jurisdiction review and adapt it before
+# you accept submissions from the public. Lines starting with '#' are comments and are not shown. Placeholders in {{double
+# braces}} are filled from site_config.json (operator_name, operator_contact, governing_law) and the live settings.
+# When you change the substance of the text, raise VERSION: every advertiser must then accept the new version again.
+VERSION: 1
+EFFECTIVE: 2026-10-23
+TITLE: Advertiser Agreement
+
+== 1. Who this is between
+This agreement is between {{OPERATOR_NAME}} ("the Operator", "we") and the person or organisation submitting advertisements ("the Advertiser", "you"), identified by the {{COIN_NAME}} wallet address you give when you accept. By ticking the box on this page and by submitting an advertisement signed with that wallet's key, you accept this agreement.
+
+== 2. The service
+We host the content of your advertisement on our servers, show it on websites that take part in our advertising network (our own and those of partner publishers), count clicks, and charge for clicks as described below. We do not guarantee any number of views, clicks, customers or sales.
+
+== 3. Eligibility and your account
+You must be at least 18 and able to enter into a contract. You are responsible for your wallet key. Anyone who signs with your key acts in your name. Keep the key and your shop secure ID secret; we cannot recover them.
+
+== 4. What you may advertise
+You must not submit content that is unlawful, misleading or deceptive; infringes anyone's rights; contains malware, scripts that try to run code on a visitor's device, or hidden redirects; promotes violence, hatred or exploitation of children; is sexually explicit; impersonates another person or organisation; or advertises goods or services you may not lawfully offer in the places where the advertisement is shown. Landing pages must match the advertisement and must be reachable over https or http. We may set stricter rules for particular categories.
+
+== 5. Your content and our right to host it
+You keep ownership of your content. You grant us a non-exclusive licence to store, copy, display and transmit it for as long as the advertisement is live, to the extent needed to provide the service. You promise that you own or are licensed to use everything you upload.
+
+== 6. Review, approval and removal
+No advertisement is shown until a person at the Operator has approved it. We may refuse, pause or remove any advertisement at any time, for example if it breaks section 4, draws complaints, or its landing page changes. If you change an approved advertisement it goes back into review and is not shown until approved again.
+
+== 7. Upload fee (mandatory)
+Each submission of an advertisement - including a changed version of an existing one - requires a paid upload order from the Operator's shop. The current fee is {{UPLOAD_FEE}}. The fee pays for storing and reviewing your content on our server. It is payable in Bitcoin, is charged per submission, and is not refunded once we have received your submission, except where we fail to provide the service or where the law requires a refund.
+
+== 8. Advertising charges, deposits and balance
+Clicks are charged at cost: the price per click set in your advertisement is paid to the publisher, and the Operator adds a service margin of {{FEE_PERCENT}}%. Charges are deducted from your advertiser balance, which you fund by sending {{COIN_NAME}} ({{TICKER}}) to the network wallet address. Deposits count after {{CONFIRMATIONS}} network confirmations. Your advertisement stops being shown when your balance or its daily budget or click limit is used up. {{COIN_NAME}} is a digital token with no guaranteed value; deposits are not bank deposits and earn no interest. Unused balance can be requested back on written request, less any network transaction costs, unless we have grounds to withhold it under section 9.
+
+== 9. Click quality and invalid traffic
+Clicks are held for {{HOLD_HOURS}} hours before the publisher is paid so that invalid traffic can be detected. We may void clicks that we reasonably believe came from bots, scripts, click farms, the Advertiser's own activity or the publisher's own activity, and we do not charge you for voided clicks. Advertisers may not click their own advertisements or arrange for others to do so. Our fraud rules are not a guarantee that every invalid click is caught.
+
+== 10. Partner publishers
+Your advertisement may be shown on websites run by the Operator and by independent partner publishers who use the same software. Partners are not employees or agents of the Operator. You cannot choose or require a particular site, and we are not responsible for the content around your advertisement on a partner's site. Advertisements are labelled "Ad".
+
+== 11. Personal data
+When a visitor views or clicks your advertisement we process technical data (such as the visitor's IP address and browser details) to deliver the service, prevent fraud and calculate charges. We keep view records for {{RETENTION_DAYS}} days and then delete them; click records are anonymised after {{IP_DAYS}} days. We give you statistics about your advertisements, not visitors' personal data. You must not use your advertisement or landing page to collect personal data from visitors unlawfully, and you are responsible for your own compliance (including consent and information duties) on your landing page.
+
+== 12. Laws and advertising rules
+You must comply with the advertising, consumer-protection and data-protection laws that apply to you and to the places where your advertisement is shown, and you are solely responsible for the claims you make.
+
+== 13. Availability and no guarantee
+The service is provided as it is. We may change, suspend or stop it, and it may be interrupted. We do not promise that the network, the token, or any exchange or market for it will exist or have any value.
+
+== 14. Liability
+We are not liable for lost profit, lost sales, lost opportunity or indirect loss. Our total liability to you for anything connected with the service is limited to the fees you paid in the three months before the event, except for matters where the law does not allow us to limit liability. You will compensate us for claims by third parties caused by your content or your breach of this agreement.
+
+== 15. Ending the agreement
+You can stop at any time by not submitting more advertisements and asking us to remove the existing ones. We can suspend or end your access immediately if you break this agreement or the law. Sections that by their nature should continue (for example fees owed, content rules, liability) continue after the agreement ends.
+
+== 16. Changes
+We may change this agreement for good reason. A new version takes effect when you accept it; you cannot submit new advertisements until you have accepted the current version.
+
+== 17. Law and disputes
+This agreement is governed by the law of {{GOVERNING_LAW}}. Disputes belong before the competent courts there, unless mandatory law gives you a right to go elsewhere.
+
+== 18. Contact
+{{OPERATOR_NAME}} - {{OPERATOR_CONTACT}}

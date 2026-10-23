@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test PyCoin Ad Network Payout Rates</title>
+</head>
+<body>
+    <h1>PyCoin Ad Network Payout Rate Test</h1>
+    
+    <h2>Storage Ad (Fixed Rate: 0.0000009 PYC)</h2>
+    <div id="storage-ad" style="border: 1px solid #ccc; padding: 10px; margin: 10px; cursor: pointer;">
+        <h3>Storage Ad Example</h3>
+        <p>This is a storage ad that pays the fixed rate of 0.0000009 PYC per click</p>
+        <button onclick="testStorageClick()">Click Me (Storage Rate)</button>
+    </div>
+    
+    <h2>Live Ad (Negotiated Rate: 0.000005 PYC)</h2>
+    <div id="live-ad" style="border: 1px solid #ccc; padding: 10px; margin: 10px; cursor: pointer;">
+        <h3>Live Ad Example</h3>
+        <p>This is a live ad that pays the negotiated rate of 0.000005 PYC per click</p>
+        <button onclick="testLiveClick()">Click Me (Live Rate)</button>
+    </div>
+    
+    <h2>Click Results</h2>
+    <div id="results"></div>
+    
+    <script>
+        function testStorageClick() {
+            // Simulate storage ad click with fixed rate
+            var storagePayoutRate = 0.0000009;
+            recordClick('storage_test_ad_001', 'storage', storagePayoutRate);
+            addResult('Storage ad clicked - Payout: ' + storagePayoutRate + ' PYC');
+        }
+        
+        function testLiveClick() {
+            // Simulate live ad click with negotiated rate  
+            var livePayoutRate = 0.000005;
+            recordClick('live_test_ad_001', 'live_client_001', livePayoutRate);
+            addResult('Live ad clicked - Payout: ' + livePayoutRate + ' PYC');
+        }
+        
+        function recordClick(adId, clientId, payoutAmount) {
+            console.log("Recording click:", adId, "Client:", clientId, "Payout:", payoutAmount);
+            
+            // This would normally send to dashboard8.php
+            fetch('dashboard8.php?ajax=record_click', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'ad_id=' + encodeURIComponent(adId) + 
+                      '&client_id=' + encodeURIComponent(clientId) + 
+                      '&zone=test&payout_amount=' + payoutAmount
+            })
+            .then(function(response) { return response.text(); })
+            .then(function(text) {
+                console.log('Click recorded:', text);
+                try {
+                    var data = JSON.parse(text);
+                    if (data.success) {
+                        addResult('✅ Click recorded successfully! Amount: ' + data.amount + ' PYC');
+                    } else {
+                        addResult('❌ Click recording failed: ' + (data.error || 'Unknown error'));
+                    }
+                } catch (e) {
+                    addResult('⚠️ Response: ' + text.substring(0, 100));
+                }
+            })
+            .catch(function(error) {
+                console.error('Error:', error);
+                addResult('❌ Network error: ' + error.message);
+            });
+        }
+        
+        function addResult(message) {
+            var results = document.getElementById('results');
+            var div = document.createElement('div');
+            div.style.padding = '5px';
+            div.style.margin = '2px';
+            div.style.backgroundColor = '#f0f0f0';
+            div.textContent = new Date().toLocaleTimeString() + ' - ' + message;
+            results.appendChild(div);
+        }
+    </script>
+</body>
+</html>

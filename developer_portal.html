@@ -1,0 +1,1596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P Ad Network - Developer Integration Portal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary: #0066cc;
+            --primary-dark: #0056b3;
+            --success: #28a745;
+            --warning: #ffc107;
+            --danger: #dc3545;
+            --info: #17a2b8;
+            --dark: #343a40;
+            --light: #f8f9fa;
+            --border: #dee2e6;
+            --shadow: 0 2px 8px rgba(0,0,0,0.1);
+            --shadow-lg: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .header {
+            background: rgba(255,255,255,0.95);
+            padding: 15px 0;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(10px);
+        }
+        
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+        }
+        
+        .logo {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .network-status {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 0.9em;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .status-online { background: #d4edda; color: #155724; }
+        .status-offline { background: #f8d7da; color: #721c24; }
+        .status-connecting { background: #fff3cd; color: #856404; }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .developer-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .api-key-display {
+            font-family: monospace;
+            background: #f8f9fa;
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            font-size: 0.8em;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .logout-btn {
+            background: var(--danger);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.3s ease;
+        }
+        
+        .logout-btn:hover {
+            background: #c82333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        
+        .auth-container {
+            max-width: 450px;
+            margin: 100px auto;
+            background: rgba(255,255,255,0.95);
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: var(--shadow-lg);
+            backdrop-filter: blur(10px);
+        }
+        
+        .auth-tabs {
+            display: flex;
+            margin-bottom: 30px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--light);
+        }
+        
+        .auth-tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            background: var(--light);
+            border: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .auth-tab.active {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .auth-form {
+            display: none;
+        }
+        
+        .auth-form.active {
+            display: block;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #4a5568;
+        }
+        
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+        
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        
+        .submit-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .dashboard {
+            display: none;
+        }
+        
+        .dashboard.active {
+            display: block;
+        }
+        
+        .dashboard-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--border);
+            flex-wrap: wrap;
+        }
+        
+        .dashboard-tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            color: #718096;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+        
+        .dashboard-tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .panel {
+            background: rgba(255,255,255,0.95);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(10px);
+            margin-bottom: 20px;
+        }
+        
+        .panel h2 {
+            color: var(--primary);
+            margin-bottom: 20px;
+            font-size: 1.4em;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .grid {
+            display: grid;
+            gap: 20px;
+        }
+        
+        .grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+        .grid-3 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+        .grid-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+        
+        .stats-card {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            transition: transform 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stats-card:hover {
+            transform: translateY(-3px);
+        }
+        
+        .stats-number {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .stats-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            text-decoration: none;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-warning { background: var(--warning); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-info { background: var(--info); color: white; }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .network-client {
+            background: white;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+        
+        .network-client:hover {
+            border-color: var(--primary);
+            box-shadow: var(--shadow);
+        }
+        
+        .network-client.selected {
+            border-color: var(--success);
+            background: #f8fff9;
+        }
+        
+        .client-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .client-info h3 {
+            margin: 0 0 5px 0;
+            color: var(--dark);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .client-meta {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        
+        .client-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+            background: var(--light);
+            border-radius: 6px;
+        }
+        
+        .stat-number {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: var(--primary);
+        }
+        
+        .stat-label {
+            font-size: 0.8em;
+            color: #666;
+        }
+        
+        .code-preview {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            overflow-x: auto;
+            margin: 15px 0;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+        
+        .embed-form {
+            background: var(--light);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .ad-preview {
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            background: white;
+        }
+        
+        .ad-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            border-bottom: 1px solid var(--border);
+            transition: background-color 0.3s ease;
+        }
+        
+        .ad-item:hover {
+            background-color: var(--light);
+        }
+        
+        .ad-image {
+            width: 80px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .ad-content {
+            flex: 1;
+        }
+        
+        .ad-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .ad-description {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        
+        .ad-meta {
+            font-size: 0.8em;
+            color: #999;
+        }
+        
+        .pythoncoin-address {
+            font-family: monospace;
+            background: #f8f9fa;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            font-size: 0.9em;
+            word-break: break-all;
+        }
+        
+        .earnings-display {
+            background: linear-gradient(135deg, var(--success) 0%, #20c997 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .earnings-amount {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        
+        .server-connection {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            background: var(--light);
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .connection-light {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        .light-green { background: var(--success); }
+        .light-red { background: var(--danger); }
+        .light-yellow { background: var(--warning); }
+        
+        .real-time-log {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.85em;
+            margin: 15px 0;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+        
+        .log-timestamp {
+            color: #a0aec0;
+        }
+        
+        .log-info { color: #63b3ed; }
+        .log-success { color: #68d391; }
+        .log-warning { color: #faf089; }
+        .log-error { color: #fc8181; }
+        
+        .selected-clients {
+            min-height: 60px;
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .client-tag {
+            background: var(--primary);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .remove-client {
+            background: rgba(255,255,255,0.3);
+            border: none;
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-weight: 500;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .alert-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        @media (max-width: 768px) {
+            .grid-2, .grid-3, .grid-4 {
+                grid-template-columns: 1fr;
+            }
+            
+            .header-content {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .dashboard-tabs {
+                overflow-x: auto;
+                white-space: nowrap;
+            }
+            
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header" id="header" style="display: none;">
+        <div class="header-content">
+            <div class="logo">
+                🌐 Nickles P2P Ad Network
+                <span style="font-size: 0.6em; color: #718096;">Developer Portal</span>
+            </div>
+            <div class="network-status">
+                <div class="status-indicator" id="connectionStatus">
+                    <div class="status-dot"></div>
+                    <span id="statusText">Connecting...</span>
+                </div>
+                <div class="server-connection">
+                    <div class="connection-light" id="serverLight"></div>
+                    <span id="serverStatus">Central Server</span>
+                </div>
+            </div>
+            <div class="developer-info">
+                <span>Developer: <strong id="username"></strong></span>
+                <div class="api-key-display" id="apiKey" title="Your Nickles Address">
+                    Loading...
+                </div>
+                <div class="earnings-display" style="padding: 8px 12px; font-size: 0.9em;">
+                    <span id="userBalance">0.00000000</span> NCKL
+                </div>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Authentication -->
+    <div class="auth-container" id="authContainer">
+        <div class="logo" style="text-align: center; margin-bottom: 30px;">
+            🌐 Nickles P2P Ad Network<br>
+            <small style="font-size: 0.6em; color: #718096;">Developer Integration Portal</small>
+        </div>
+        
+        <div class="auth-tabs">
+            <button class="auth-tab active" onclick="switchTab('login')">Login</button>
+            <button class="auth-tab" onclick="switchTab('register')">Register</button>
+        </div>
+        
+        <!-- Login Form -->
+        <form class="auth-form active" id="loginForm" onsubmit="login(event)">
+            <div class="form-group">
+                <label for="loginUsername">Username</label>
+                <input type="text" id="loginUsername" required>
+            </div>
+            <div class="form-group">
+                <label for="loginPassword">Password</label>
+                <input type="password" id="loginPassword" required>
+            </div>
+            <div class="form-group">
+                <label for="loginPyCoinAddress">Nickles Address</label>
+                <input type="text" id="loginPyCoinAddress" placeholder="Your Nickles wallet address" required>
+                <small style="color: #666; font-size: 0.85em;">This address will receive earnings from ad clicks</small>
+            </div>
+            <button type="submit" class="submit-btn">Connect to Network</button>
+        </form>
+        
+        <!-- Register Form -->
+        <form class="auth-form" id="registerForm" onsubmit="register(event)">
+            <div class="form-group">
+                <label for="registerUsername">Username</label>
+                <input type="text" id="registerUsername" required>
+            </div>
+            <div class="form-group">
+                <label for="registerPassword">Password</label>
+                <input type="password" id="registerPassword" required minlength="6">
+            </div>
+            <div class="form-group">
+                <label for="confirmPassword">Confirm Password</label>
+                <input type="password" id="confirmPassword" required>
+            </div>
+            <div class="form-group">
+                <label for="registerPyCoinAddress">Nickles Address</label>
+                <input type="text" id="registerPyCoinAddress" placeholder="Your Nickles wallet address" required>
+                <small style="color: #666; font-size: 0.85em;">Generate a Nickles address from the wallet application</small>
+            </div>
+            <button type="submit" class="submit-btn">Join Network</button>
+        </form>
+        
+        <div id="authMessage"></div>
+    </div>
+
+    <!-- Dashboard -->
+    <div class="container dashboard" id="dashboard">
+        <!-- Dashboard Tabs -->
+        <div class="dashboard-tabs">
+            <button class="dashboard-tab active" onclick="switchDashboardTab('overview')">📊 Overview</button>
+            <button class="dashboard-tab" onclick="switchDashboardTab('network')">🌐 P2P Clients</button>
+            <button class="dashboard-tab" onclick="switchDashboardTab('generator')">🔗 JS Generator</button>
+            <button class="dashboard-tab" onclick="switchDashboardTab('ads')">📺 Live Ads</button>
+        </div>
+
+        <!-- Overview Tab -->
+        <div class="tab-content active" id="overviewTab">
+            <div class="grid grid-4">
+                <div class="stats-card">
+                    <div class="stats-number" id="totalClicks">0</div>
+                    <div class="stats-label">Total Clicks</div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, var(--success) 0%, #20c997 100%);">
+                    <div class="stats-number" id="totalEarned">0.00000000</div>
+                    <div class="stats-label">NCKL Earned</div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, var(--info) 0%, #138496 100%);">
+                    <div class="stats-number" id="activeEmbeds">0</div>
+                    <div class="stats-label">Active Embeds</div>
+                </div>
+                <div class="stats-card" style="background: linear-gradient(135deg, var(--warning) 0%, #e0a800 100%);">
+                    <div class="stats-number" id="connectedClients">0</div>
+                    <div class="stats-label">Connected Clients</div>
+                </div>
+            </div>
+            
+            <div class="grid grid-2">
+                <div class="panel">
+                    <h2>🔄 Real-Time Activity</h2>
+                    <div class="real-time-log" id="activityLog">
+                        <div class="log-entry"><span class="log-timestamp">[00:00:00]</span> <span class="log-info">Portal initialized</span></div>
+                    </div>
+                </div>
+                
+                <div class="panel">
+                    <h2>⚡ Quick Actions</h2>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <button class="btn btn-primary" onclick="switchDashboardTab('network')">🔍 Scan for P2P Clients</button>
+                        <button class="btn btn-success" onclick="switchDashboardTab('generator')">⚡ Generate Ad Block</button>
+                        <button class="btn btn-info" onclick="testConnection()">🔧 Test Central Server</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Network Tab -->
+        <div class="tab-content" id="networkTab">
+            <div class="panel">
+                <h2>🌐 Discover P2P Ad Clients</h2>
+                <p>Connect to active Nickles P2P ad clients to access their advertisement content.</p>
+                
+                <div style="margin: 20px 0;">
+                    <button class="btn btn-primary" onclick="scanForClients()">🔍 Scan Network</button>
+                    <button class="btn btn-info" onclick="refreshClients()">🔄 Refresh</button>
+                    <button class="btn btn-success" onclick="connectToSelected()">🔗 Connect Selected</button>
+                </div>
+                
+                <div id="clientsList">
+                    <div style="text-align: center; padding: 40px; color: #666;">
+                        <h3>Click "Scan Network" to discover P2P clients</h3>
+                        <p>Looking for Python Qt clients running on port 8082...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Generator Tab -->
+        <div class="tab-content" id="generatorTab">
+            <div class="panel">
+                <h2>⚡ JavaScript Ad Block Generator</h2>
+                <p>Generate personalized ad blocks that serve content from selected P2P clients.</p>
+                
+                <div class="selected-clients" id="selectedClientsDisplay">
+                    <span style="color: #666; font-style: italic;">Select P2P clients from the Network tab</span>
+                </div>
+                
+                <div class="embed-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="embedZone">Zone Identifier</label>
+                            <input type="text" id="embedZone" value="main-content" placeholder="e.g., sidebar, header">
+                        </div>
+                        <div class="form-group">
+                            <label for="adRotation">Rotation Interval</label>
+                            <select id="adRotation">
+                                <option value="15">15 seconds</option>
+                                <option value="30" selected>30 seconds</option>
+                                <option value="60">1 minute</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="embedWidth">Width</label>
+                            <input type="text" id="embedWidth" value="400px">
+                        </div>
+                        <div class="form-group">
+                            <label for="embedHeight">Height</label>
+                            <input type="text" id="embedHeight" value="300px">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Your Nickles Address</label>
+                        <div class="pythoncoin-address" id="pythonCoinAddressDisplay">
+                            Loading...
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin: 20px 0;">
+                    <button class="btn btn-success" onclick="generateAdBlock()">🚀 Generate Ad Block</button>
+                    <button class="btn btn-warning" onclick="downloadAdBlock()">💾 Download</button>
+                </div>
+                
+                <div class="code-preview" id="generatedCode" style="display: none;">
+                    <button class="copy-btn" onclick="copyToClipboard()">📋 Copy</button>
+                    <div id="codeContent"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ads Tab -->
+        <div class="tab-content" id="adsTab">
+            <div class="panel">
+                <h2>📺 Live Advertisement Feed</h2>
+                <p>Browse available advertisements from connected P2P clients.</p>
+                
+                <div style="margin: 20px 0;">
+                    <button class="btn btn-primary" onclick="refreshAds()">🔄 Refresh Ads</button>
+                </div>
+                
+                <div class="ad-preview" id="adsList">
+                    <div style="text-align: center; padding: 40px; color: #666;">
+                        <h3>No ads loaded</h3>
+                        <p>Connect to P2P clients first, then click "Refresh Ads"</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global application state
+        var currentUser = null;
+        var selectedClients = [];
+        var availableClients = [];
+        var liveAds = [];
+        var serverConfig = {
+            mainApi: 'https://secupgrade.com/livepy/pythoncoin/api.php',
+            commands: 'https://secupgrade.com/livepy/pythoncoin/commands.php',
+            jsServer: 'http://secupgrade.com:8082'
+        };
+        var userStats = {
+            totalClicks: 0,
+            totalEarned: 0,
+            activeEmbeds: 0,
+            connectedClients: 0
+        };
+        
+        // Initialize application
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeApp();
+        });
+        
+        function initializeApp() {
+            var savedUser = localStorage.getItem('p2p_developer');
+            if (savedUser) {
+                currentUser = JSON.parse(savedUser);
+                showDashboard();
+                connectToCentralServer();
+            }
+            
+            addLog('Portal initialized', 'info');
+        }
+        
+        // Authentication Functions
+        function switchTab(tab) {
+            var tabs = document.querySelectorAll('.auth-tab');
+            var forms = document.querySelectorAll('.auth-form');
+            
+            for (var i = 0; i < tabs.length; i++) {
+                tabs[i].classList.remove('active');
+            }
+            for (var i = 0; i < forms.length; i++) {
+                forms[i].classList.remove('active');
+            }
+            
+            var activeTab = document.querySelector('[onclick*="' + tab + '"]');
+            var activeForm = document.getElementById(tab + 'Form');
+            
+            if (activeTab) activeTab.classList.add('active');
+            if (activeForm) activeForm.classList.add('active');
+        }
+        
+        function switchDashboardTab(tab) {
+            var tabs = document.querySelectorAll('.dashboard-tab');
+            var contents = document.querySelectorAll('.tab-content');
+            
+            for (var i = 0; i < tabs.length; i++) {
+                tabs[i].classList.remove('active');
+            }
+            for (var i = 0; i < contents.length; i++) {
+                contents[i].classList.remove('active');
+            }
+            
+            var activeTab = document.querySelector('[onclick*="' + tab + '"]');
+            var activeContent = document.getElementById(tab + 'Tab');
+            
+            if (activeTab) activeTab.classList.add('active');
+            if (activeContent) activeContent.classList.add('active');
+            
+            // Load tab-specific data
+            if (tab === 'ads') {
+                loadLiveAds();
+            }
+        }
+        
+        function login(event) {
+            event.preventDefault();
+            
+            var username = document.getElementById('loginUsername').value.trim();
+            var password = document.getElementById('loginPassword').value;
+            var pycoinAddress = document.getElementById('loginPyCoinAddress').value.trim();
+            
+            if (!username || !password || !pycoinAddress) {
+                showMessage('Please fill in all fields', 'error');
+                return;
+            }
+            
+            var submitBtn = event.target.querySelector('.submit-btn');
+            submitBtn.textContent = 'Connecting...';
+            submitBtn.disabled = true;
+            
+            fetch('auth.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    action: 'login',
+                    username: username,
+                    password: password,
+                    pythoncoin_address: pycoinAddress
+                })
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    currentUser = {
+                        username: username,
+                        pythoncoin_address: pycoinAddress,
+                        balance: (data.user && data.user.exp) || 0,
+                        joinDate: (data.user && data.user.created_at) || new Date().toISOString(),
+                        lastLogin: new Date().toISOString()
+                    };
+                    
+                    localStorage.setItem('p2p_developer', JSON.stringify(currentUser));
+                    showMessage('Login successful!', 'success');
+                    setTimeout(function() { showDashboard(); }, 1000);
+                } else {
+                    showMessage(data.message || 'Login failed', 'error');
+                }
+            })
+            .catch(function(error) {
+                showMessage('Connection error: ' + error.message, 'error');
+            })
+            .finally(function() {
+                submitBtn.textContent = 'Connect to Network';
+                submitBtn.disabled = false;
+            });
+        }
+        
+        function register(event) {
+            event.preventDefault();
+            
+            var username = document.getElementById('registerUsername').value.trim();
+            var password = document.getElementById('registerPassword').value;
+            var confirmPassword = document.getElementById('confirmPassword').value;
+            var pycoinAddress = document.getElementById('registerPyCoinAddress').value;
+            
+            if (password !== confirmPassword) {
+                showMessage('Passwords do not match', 'error');
+                return;
+            }
+            
+            var submitBtn = event.target.querySelector('.submit-btn');
+            submitBtn.textContent = 'Creating Account...';
+            submitBtn.disabled = true;
+            
+            fetch('auth.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    action: 'register',
+                    username: username,
+                    password: password,
+                    confirm_password: confirmPassword,
+                    pythoncoin_address: pycoinAddress
+                })
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showMessage('Registration successful! Please login.', 'success');
+                    switchTab('login');
+                    document.getElementById('loginUsername').value = username;
+                    document.getElementById('loginPyCoinAddress').value = pycoinAddress;
+                } else {
+                    showMessage(data.message || 'Registration failed', 'error');
+                }
+            })
+            .catch(function(error) {
+                showMessage('Connection error: ' + error.message, 'error');
+            })
+            .finally(function() {
+                submitBtn.textContent = 'Join Network';
+                submitBtn.disabled = false;
+            });
+        }
+        
+        function showDashboard() {
+            document.getElementById('authContainer').style.display = 'none';
+            document.getElementById('header').style.display = 'block';
+            document.getElementById('dashboard').classList.add('active');
+            
+            // Update header info
+            document.getElementById('username').textContent = currentUser.username;
+            document.getElementById('apiKey').textContent = currentUser.pythoncoin_address.substring(0, 12) + '...';
+            document.getElementById('apiKey').title = currentUser.pythoncoin_address;
+            document.getElementById('userBalance').textContent = currentUser.balance.toFixed(8);
+            document.getElementById('pythonCoinAddressDisplay').textContent = currentUser.pythoncoin_address;
+            
+            // Load initial data
+            updateStats();
+            addLog('Developer ' + currentUser.username + ' connected', 'success');
+        }
+        
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                localStorage.removeItem('p2p_developer');
+                currentUser = null;
+                selectedClients = [];
+                availableClients = [];
+                liveAds = [];
+                
+                document.getElementById('authContainer').style.display = 'block';
+                document.getElementById('header').style.display = 'none';
+                document.getElementById('dashboard').classList.remove('active');
+                
+                document.getElementById('loginForm').reset();
+                document.getElementById('registerForm').reset();
+                
+                addLog('Developer logged out', 'info');
+            }
+        }
+        
+        function connectToCentralServer() {
+            updateServerStatus('connecting');
+            
+            fetch(serverConfig.commands + '?action=heartbeat&developer=' + currentUser.username)
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        updateServerStatus('online');
+                        addLog('Connected to central server', 'success');
+                    } else {
+                        updateServerStatus('offline');
+                        addLog('Central server connection failed', 'error');
+                    }
+                })
+                .catch(function(error) {
+                    updateServerStatus('offline');
+                    addLog('Server connection error: ' + error.message, 'error');
+                });
+        }
+        
+        function updateServerStatus(status) {
+            var statusEl = document.getElementById('connectionStatus');
+            var lightEl = document.getElementById('serverLight');
+            var statusTextEl = document.getElementById('statusText');
+            var serverStatusEl = document.getElementById('serverStatus');
+            
+            statusEl.className = 'status-indicator status-' + status;
+            
+            if (status === 'online') {
+                lightEl.className = 'connection-light light-green';
+                statusTextEl.textContent = 'Connected';
+                serverStatusEl.textContent = 'Central Server Online';
+            } else if (status === 'offline') {
+                lightEl.className = 'connection-light light-red';
+                statusTextEl.textContent = 'Offline';
+                serverStatusEl.textContent = 'Central Server Offline';
+            } else {
+                lightEl.className = 'connection-light light-yellow';
+                statusTextEl.textContent = 'Connecting...';
+                serverStatusEl.textContent = 'Connecting to Server...';
+            }
+        }
+        
+        function scanForClients() {
+            addLog('Scanning network for P2P clients...', 'info');
+            
+            var scanBtn = document.querySelector('[onclick="scanForClients()"]');
+            var originalText = scanBtn.textContent;
+            scanBtn.textContent = '🔍 Scanning...';
+            scanBtn.disabled = true;
+            
+            fetch(serverConfig.commands, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    action: 'scan_network',
+                    username: currentUser.username
+                })
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    availableClients = data.clients || [];
+                    displayNetworkClients();
+                    addLog('Network scan complete: Found ' + availableClients.length + ' P2P clients', 'success');
+                } else {
+                    addLog('Network scan failed: ' + data.message, 'error');
+                }
+            })
+            .catch(function(error) {
+                addLog('Scan error: ' + error.message, 'error');
+            })
+            .finally(function() {
+                scanBtn.textContent = originalText;
+                scanBtn.disabled = false;
+            });
+        }
+        
+        function displayNetworkClients() {
+            var container = document.getElementById('clientsList');
+            
+            if (availableClients.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;"><h3>No P2P clients found</h3><p>Make sure your Python Qt client is running on port 8082</p></div>';
+                return;
+            }
+            
+            var html = '';
+            for (var i = 0; i < availableClients.length; i++) {
+                var client = availableClients[i];
+                var isSelected = selectedClients.some(function(c) { return c.client_id === client.client_id; });
+                
+                html += '<div class="network-client ' + (isSelected ? 'selected' : '') + '">';
+                html += '<div class="client-header">';
+                html += '<div class="client-info">';
+                html += '<h3><span class="status-badge status-' + client.status + '">' + client.status + '</span> ' + client.name + '</h3>';
+                html += '<div class="client-meta"><strong>Client ID:</strong> ' + client.client_id + ' | <strong>Address:</strong> ' + client.host + ':' + client.port + '</div>';
+                html += '</div>';
+                html += '<button class="btn ' + (isSelected ? 'btn-success' : 'btn-primary') + '" onclick="toggleClientSelection(\'' + client.client_id + '\')">';
+                html += isSelected ? '✓ Selected' : 'Select';
+                html += '</button>';
+                html += '</div>';
+                html += '<div class="client-stats">';
+                html += '<div class="stat-item"><div class="stat-number">' + (client.ad_count || 0) + '</div><div class="stat-label">Ads</div></div>';
+                html += '<div class="stat-item"><div class="stat-number">' + (client.peers || 0) + '</div><div class="stat-label">Peers</div></div>';
+                html += '</div>';
+                html += '</div>';
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        function toggleClientSelection(clientId) {
+            var client = availableClients.find(function(c) { return c.client_id === clientId; });
+            if (!client || client.status === 'offline') return;
+            
+            var index = selectedClients.findIndex(function(c) { return c.client_id === clientId; });
+            
+            if (index > -1) {
+                selectedClients.splice(index, 1);
+                addLog('Removed ' + client.name + ' from selection', 'info');
+            } else {
+                selectedClients.push(client);
+                addLog('Added ' + client.name + ' to selection', 'info');
+            }
+            
+            displayNetworkClients();
+            updateSelectedClientsDisplay();
+            updateStats();
+        }
+        
+        function updateSelectedClientsDisplay() {
+            var container = document.getElementById('selectedClientsDisplay');
+            
+            if (selectedClients.length === 0) {
+                container.innerHTML = '<span style="color: #666; font-style: italic;">Select P2P clients from the Network tab</span>';
+                return;
+            }
+            
+            var html = '';
+            for (var i = 0; i < selectedClients.length; i++) {
+                var client = selectedClients[i];
+                html += '<div class="client-tag">' + client.name + ' <button class="remove-client" onclick="removeClientSelection(\'' + client.client_id + '\')">×</button></div>';
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        function removeClientSelection(clientId) {
+            selectedClients = selectedClients.filter(function(c) { return c.client_id !== clientId; });
+            updateSelectedClientsDisplay();
+            displayNetworkClients();
+            updateStats();
+        }
+        
+        function generateAdBlock() {
+            if (selectedClients.length === 0) {
+                alert('Please select at least one P2P client from the Network tab');
+                return;
+            }
+            
+            var zone = document.getElementById('embedZone').value || 'main-content';
+            var rotation = parseInt(document.getElementById('adRotation').value) || 30;
+            var width = document.getElementById('embedWidth').value || '400px';
+            var height = document.getElementById('embedHeight').value || '300px';
+            
+            addLog('Generating ad block for zone: ' + zone, 'info');
+            
+            var adBlockCode = generateJavaScriptAdBlock({
+                zone: zone,
+                rotation: rotation,
+                width: width,
+                height: height,
+                pythonCoinAddress: currentUser.pythoncoin_address,
+                developer: currentUser.username,
+                selectedClients: selectedClients,
+                serverConfig: serverConfig
+            });
+            
+            document.getElementById('codeContent').textContent = adBlockCode;
+            document.getElementById('generatedCode').style.display = 'block';
+            
+            userStats.activeEmbeds++;
+            updateStats();
+            addLog('Ad block generated successfully', 'success');
+        }
+        
+        function generateJavaScriptAdBlock(config) {
+            var clientsJson = JSON.stringify(config.selectedClients);
+            
+            var code = '// Nickles P2P Ad Network - Generated Ad Block\n';
+            code += '// Developer: ' + config.developer + '\n';
+            code += '// Nickles Address: ' + config.pythonCoinAddress + '\n';
+            code += '// Generated: ' + new Date().toISOString() + '\n';
+            code += '// Zone: ' + config.zone + '\n\n';
+            code += '(function() {\n';
+            code += '    "use strict";\n\n';
+            code += '    var PYC_AD_CONFIG = {\n';
+            code += '        zone: "' + config.zone + '",\n';
+            code += '        rotation: ' + (config.rotation * 1000) + ',\n';
+            code += '        width: "' + config.width + '",\n';
+            code += '        height: "' + config.height + '",\n';
+            code += '        developer: "' + config.developer + '",\n';
+            code += '        pythonCoinAddress: "' + config.pythonCoinAddress + '",\n';
+            code += '        centralServer: "' + config.serverConfig.commands + '",\n';
+            code += '        clients: ' + clientsJson + ',\n';
+            code += '        currentAdIndex: 0,\n';
+            code += '        container: null,\n';
+            code += '        rotationTimer: null\n';
+            code += '    };\n\n';
+            code += '    function initializeAdBlock() {\n';
+            code += '        console.log("Nickles Ad Block Initializing...", PYC_AD_CONFIG);\n';
+            code += '        var container = document.querySelector("[data-pyc-zone=\\"" + PYC_AD_CONFIG.zone + "\\"]");\n';
+            code += '        if (!container) {\n';
+            code += '            console.error("NCKL Ad Zone not found:", PYC_AD_CONFIG.zone);\n';
+            code += '            return;\n';
+            code += '        }\n';
+            code += '        PYC_AD_CONFIG.container = container;\n';
+            code += '        container.style.width = PYC_AD_CONFIG.width;\n';
+            code += '        container.style.height = PYC_AD_CONFIG.height;\n';
+            code += '        container.style.border = "1px solid #ddd";\n';
+            code += '        container.style.borderRadius = "8px";\n';
+            code += '        container.style.backgroundColor = "#f8f9fa";\n';
+            code += '        loadNextAd();\n';
+            code += '        if (PYC_AD_CONFIG.rotation > 0) {\n';
+            code += '            PYC_AD_CONFIG.rotationTimer = setInterval(loadNextAd, PYC_AD_CONFIG.rotation);\n';
+            code += '        }\n';
+            code += '    }\n\n';
+            code += '    function loadNextAd() {\n';
+            code += '        if (PYC_AD_CONFIG.clients.length === 0) {\n';
+            code += '            showPlaceholder("No P2P clients connected");\n';
+            code += '            return;\n';
+            code += '        }\n';
+            code += '        var client = PYC_AD_CONFIG.clients[PYC_AD_CONFIG.currentAdIndex % PYC_AD_CONFIG.clients.length];\n';
+            code += '        PYC_AD_CONFIG.currentAdIndex++;\n';
+            code += '        fetch("http://" + client.host + ":" + client.port + "/ads?zone=" + PYC_AD_CONFIG.zone)\n';
+            code += '            .then(function(response) { return response.json(); })\n';
+            code += '            .then(function(data) {\n';
+            code += '                if (data.ads && data.ads.length > 0) {\n';
+            code += '                    displayAd(data.ads[0], client);\n';
+            code += '                } else {\n';
+            code += '                    showPlaceholder("No ads from " + client.name);\n';
+            code += '                }\n';
+            code += '            })\n';
+            code += '            .catch(function() {\n';
+            code += '                showPlaceholder("Loading ads...");\n';
+            code += '            });\n';
+            code += '    }\n\n';
+            code += '    function displayAd(ad, client) {\n';
+            code += '        var html = "<div style=\\"padding:15px;height:100%;display:flex;flex-direction:column;justify-content:center;\\">";\n';
+            code += '        html += "<h4 style=\\"margin:0 0 8px 0;font-size:14px;text-align:center;\\">" + ad.title + "</h4>";\n';
+			code += '        html += "<p style=\\"margin:0 0 10px 0;font-size:12px;color:#666;text-align:center;\\">" + ad.description + "</p>";\n';
+			code += '        html += "<div style=\\"text-align:center;\\"><button onclick=\\"recordClick(\\\'" + ad.id + "\\\', \\\'" + client.client_id + "\\\')\\" style=\\"background:#0066cc;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;\\">Learn More</button></div>";\n';
+            code += '        html += "</div>";\n';
+            code += '        PYC_AD_CONFIG.container.innerHTML = html;\n';
+            code += '    }\n\n';
+            code += '    function showPlaceholder(message) {\n';
+            code += '        PYC_AD_CONFIG.container.innerHTML = "<div style=\\"display:flex;align-items:center;justify-content:center;height:100%;color:#666;\\">" + message + "</div>";\n';
+            code += '    }\n\n';
+            code += '    window.recordClick = function(adId, clientId) {\n';
+            code += '        console.log("Ad clicked:", adId);\n';
+            code += '        fetch(PYC_AD_CONFIG.centralServer, {\n';
+            code += '            method: "POST",\n';
+            code += '            headers: {"Content-Type": "application/json"},\n';
+            code += '            body: JSON.stringify({\n';
+            code += '                action: "record_event",\n';
+            code += '                event_type: "click",\n';
+            code += '                username: PYC_AD_CONFIG.developer,\n';
+            code += '                ad_id: adId,\n';
+            code += '                embed_id: PYC_AD_CONFIG.zone,\n';
+            code += '                metadata: { client_id: clientId, timestamp: Date.now() }\n';
+            code += '            })\n';
+            code += '        }).catch(function(e) { console.error("Click record failed:", e); });\n';
+            code += '    };\n\n';
+            code += '    if (document.readyState === "loading") {\n';
+            code += '        document.addEventListener("DOMContentLoaded", initializeAdBlock);\n';
+            code += '    } else {\n';
+            code += '        initializeAdBlock();\n';
+            code += '    }\n';
+            code += '})();\n\n';
+            code += '// Usage: <div data-pyc-zone="' + config.zone + '"></div>';
+            
+            return code;
+        }
+        
+        function copyToClipboard() {
+            var code = document.getElementById('codeContent').textContent;
+            
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(code).then(function() {
+                    addLog('Ad block code copied to clipboard', 'success');
+                    alert('Code copied to clipboard!');
+                });
+            } else {
+                var textArea = document.createElement('textarea');
+                textArea.value = code;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                alert('Code copied to clipboard!');
+            }
+        }
+        
+        function downloadAdBlock() {
+            var code = document.getElementById('codeContent').textContent;
+            
+            if (!code) {
+                alert('Generate ad block code first');
+                return;
+            }
+            
+            var blob = new Blob([code], { type: 'application/javascript' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'pythoncoin-adblock-' + currentUser.username + '-' + Date.now() + '.js';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            addLog('Ad block JavaScript file downloaded', 'success');
+        }
+        
+        function loadLiveAds() {
+            addLog('Loading live ads from P2P network...', 'info');
+            
+            fetch(serverConfig.commands, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    action: 'ads',
+                    username: currentUser.username,
+                    filters: {}
+                })
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    liveAds = data.ads || [];
+                    displayLiveAds();
+                    addLog('Loaded ' + liveAds.length + ' live ads', 'success');
+                } else {
+                    addLog('Failed to load ads: ' + data.message, 'error');
+                    displayLiveAds();
+                }
+            })
+            .catch(function(error) {
+                addLog('Error loading ads: ' + error.message, 'error');
+                displayLiveAds();
+            });
+        }
+        
+        function displayLiveAds() {
+            var container = document.getElementById('adsList');
+            
+            if (liveAds.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 40px; color: #666;"><h3>No live ads available</h3><p>Connect to P2P clients first</p></div>';
+                return;
+            }
+            
+            var html = '';
+            for (var i = 0; i < liveAds.length; i++) {
+                var ad = liveAds[i];
+                html += '<div class="ad-item">';
+                html += '<div class="ad-image">📺</div>';
+                html += '<div class="ad-content">';
+                html += '<div class="ad-title">' + ad.title + '</div>';
+                html += '<div class="ad-description">' + ad.description + '</div>';
+                html += '<div class="ad-meta"><strong>Category:</strong> ' + ad.category + ' | <strong>Source:</strong> ' + ad.source + '</div>';
+                html += '</div>';
+                html += '<button class="btn btn-info" onclick="previewSingleAd(\'' + ad.id + '\')">👁️ Preview</button>';
+                html += '</div>';
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        function previewSingleAd(adId) {
+            var ad = liveAds.find(function(a) { return a.id === adId; });
+            if (!ad) return;
+            
+            var previewWindow = window.open('', '_blank', 'width=600,height=500');
+            previewWindow.document.write('<html><head><title>Ad Preview</title></head><body style="font-family:Arial;padding:20px;background:#667eea;color:white;"><h2>Ad Preview</h2><h3>' + ad.title + '</h3><p>' + ad.description + '</p><p><strong>Category:</strong> ' + ad.category + '</p></body></html>');
+            previewWindow.document.close();
+            
+            addLog('Previewed ad: ' + ad.title, 'info');
+        }
+        
+        function testConnection() {
+            addLog('Testing central server connection...', 'info');
+            updateServerStatus('connecting');
+            
+            fetch(serverConfig.commands + '?action=test_connection')
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        updateServerStatus('online');
+                        addLog('Central server connection successful', 'success');
+                        alert('Connection test successful!');
+                    } else {
+                        throw new Error(data.message);
+                    }
+                })
+                .catch(function(error) {
+                    updateServerStatus('offline');
+                    addLog('Central server connection failed: ' + error.message, 'error');
+                    alert('Connection test failed: ' + error.message);
+                });
+        }
+        
+        function refreshClients() {
+            addLog('Refreshing P2P client list...', 'info');
+            scanForClients();
+        }
+        
+        function connectToSelected() {
+            if (selectedClients.length === 0) {
+                alert('Please select at least one P2P client first');
+                return;
+            }
+            
+            addLog('Connecting to ' + selectedClients.length + ' selected clients...', 'info');
+            
+            for (var i = 0; i < selectedClients.length; i++) {
+                var client = selectedClients[i];
+                addLog('Connected to ' + client.name, 'success');
+            }
+            
+            updateStats();
+        }
+        
+        function refreshAds() {
+            addLog('Refreshing live ads...', 'info');
+            loadLiveAds();
+        }
+        
+        function addLog(message, type) {
+            var log = document.getElementById('activityLog');
+            if (!log) return;
+            
+            var timestamp = new Date().toLocaleTimeString();
+            var entry = document.createElement('div');
+            entry.className = 'log-entry log-' + (type || 'info');
+            entry.innerHTML = '<span class="log-timestamp">[' + timestamp + ']</span> <span>' + message + '</span>';
+            
+            log.insertBefore(entry, log.firstChild);
+            
+            while (log.children.length > 50) {
+                log.removeChild(log.lastChild);
+            }
+            
+            log.scrollTop = 0;
+        }
+        
+        function updateStats() {
+            userStats.connectedClients = selectedClients.length;
+            
+            document.getElementById('totalClicks').textContent = userStats.totalClicks.toLocaleString();
+            document.getElementById('totalEarned').textContent = userStats.totalEarned.toFixed(8);
+            document.getElementById('activeEmbeds').textContent = userStats.activeEmbeds;
+            document.getElementById('connectedClients').textContent = userStats.connectedClients;
+        }
+        
+        function showMessage(message, type) {
+            var messageDiv = document.getElementById('authMessage');
+            messageDiv.innerHTML = '<div class="alert alert-' + type + '">' + message + '</div>';
+            
+            setTimeout(function() {
+                messageDiv.innerHTML = '';
+            }, 5000);
+        }
+        
+        console.log('Nickles P2P Ad Network Developer Portal initialized');
+    </script>
+</body>
+</html>
