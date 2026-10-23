@@ -699,3 +699,27 @@ CREATE TABLE IF NOT EXISTS `users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
+CREATE TABLE IF NOT EXISTS `app_developer_sessions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `client_id` varchar(255) NOT NULL,
+  `developer_address` varchar(100) NOT NULL,
+  `session_start` timestamp NOT NULL DEFAULT current_timestamp(),
+  `last_activity` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `session_data` text DEFAULT NULL,
+  `status` varchar(20) DEFAULT 'active',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_client_dev` (`client_id`,`developer_address`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `ad_notifications` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `type` varchar(100) DEFAULT NULL,
+  `title` varchar(255) DEFAULT NULL,
+  `message` text NOT NULL,
+  `recipient_type` varchar(50) DEFAULT NULL,
+  `recipient_id` varchar(255) DEFAULT NULL,
+  `metadata` longtext DEFAULT NULL,
+  `priority` varchar(50) DEFAULT NULL,
+  `is_read` tinyint(1) DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

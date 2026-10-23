@@ -146,9 +146,23 @@ class EnhancedDatabaseManager:
                 ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
             """)
 
-            # Create 'notifications' table
+            # Wallet-side session tracking (separate from the dashboard's developer_sessions table)
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS notifications (
+                CREATE TABLE IF NOT EXISTS app_developer_sessions (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    client_id VARCHAR(255) NOT NULL,
+                    developer_address VARCHAR(100) NOT NULL,
+                    session_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    session_data TEXT,
+                    status VARCHAR(20) DEFAULT 'active',
+                    UNIQUE KEY uq_client_dev (client_id, developer_address)
+                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+            """)
+
+            # Create 'ad_notifications' table (the wallet's own; "notifications" is taken by another application)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ad_notifications (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     type VARCHAR(100),
                     title VARCHAR(255),
@@ -426,7 +440,7 @@ class DatabaseManager:
     def create_notification(self, notification_data):
         try:
             query = """
-                INSERT INTO notifications (type, title, message, recipient_type, metadata, priority)
+                INSERT INTO ad_notifications (type, title, message, recipient_type, metadata, priority)
                 VALUES (%(type)s, %(title)s, %(message)s, %(recipient_type)s, %(metadata)s, %(priority)s)
             """
             
@@ -447,7 +461,7 @@ class DatabaseManager:
     
     def get_recent_notifications(self, limit=10):
         query = """
-            SELECT * FROM notifications 
+            SELECT * FROM ad_notifications 
             WHERE recipient_type IN ('all', 'clients')
             ORDER BY created_at DESC 
             LIMIT %s
@@ -8464,7 +8478,7 @@ class UnifiedPythonCoinWallet(QMainWindow):
             
             # Clean up old sessions
             cleanup_query = """
-                UPDATE developer_sessions 
+                UPDATE app_developer_sessions 
                 SET status = 'inactive'
                 WHERE last_activity < DATE_SUB(NOW(), INTERVAL 2 HOUR)
                 AND status = 'active'
@@ -15024,7 +15038,7 @@ Your {ad_type} advertisement is now live and ready to earn NCKL!"""
                 return False
             
             query = """
-                INSERT INTO developer_sessions 
+                INSERT INTO app_developer_sessions 
                 (client_id, developer_address, session_start, session_data, status)
                 VALUES (%s, %s, CURRENT_TIMESTAMP, %s, 'active')
                 ON DUPLICATE KEY UPDATE
@@ -15171,7 +15185,7 @@ Your {ad_type} advertisement is now live and ready to earn NCKL!"""
             
             # Mark sessions as inactive if no activity for 1 hour
             query = """
-                UPDATE developer_sessions 
+                UPDATE app_developer_sessions 
                 SET status = 'inactive'
                 WHERE last_activity < DATE_SUB(NOW(), INTERVAL 1 HOUR)
                 AND status = 'active'
