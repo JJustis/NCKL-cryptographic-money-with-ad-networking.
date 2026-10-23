@@ -80,7 +80,10 @@ echo "\nfraud rules\n";
 visitor(5);
 writeAd($dev);                                   // now the advertiser is the publisher itself
 $r = click($pdo, $dev);
-check("an advertiser cannot earn from its own ad", !$r['ok'] && strpos($r['error'], 'own ads') !== false, $r['error']);
+check("an advertiser's click on its own ad is counted but earns nothing", $r['ok'] && !empty($r['self']) && $r['amount'] === 0.0, $r['error']);
+$row = $pdo->query("SELECT payment_status, payout_amount, charged_sat, processed FROM ad_clicks WHERE id = " . (int)$r['id'])->fetch();
+check("...it is stored as a statistics-only click (not payable, not charged)", $row && $row['payment_status'] === 'self' && (float)$row['payout_amount'] === 0.0 && (int)$row['charged_sat'] === 0 && (int)$row['processed'] === 1, json_encode($row));
+$pdo->exec("DELETE FROM ad_clicks WHERE payment_status = 'self' AND ad_id = '" . AD . "'");
 writeAd(ADV, 100.0, 5);
 $_SERVER['HTTP_USER_AGENT'] = 'python-requests/2.32 click-farm';
 visitor(6);

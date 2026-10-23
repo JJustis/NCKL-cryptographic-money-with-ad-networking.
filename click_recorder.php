@@ -171,9 +171,8 @@ function clk_record_click(PDO $pdo, array $in, $status = 'pending') {
     if ($ad === null)                                     return $fail('Unknown or inactive ad');
     if (econ_approval_status($pdo, $adId) !== 'approved') return $fail('Ad is not approved');
     if ($ad['advertiser'] === '')                         return $fail('Ad has no advertiser account');
-    if (empty($cfg['allow_self_clicks']) && $ad['advertiser'] === $dev['pythoncoin_address']) {
-        return $fail('Advertisers cannot earn from their own ads');
-    }
+    // An advertiser cannot earn from its own ad. The click is still counted (statistics only): never charged, never paid.
+    $selfClick = empty($cfg['allow_self_clicks']) && $ad['advertiser'] === $dev['pythoncoin_address'];
 
     $amount = round(min(max($ad['payout'], 0.0), CLK_MAX_PAYOUT), 8);
     if ($amount <= 0)                                     return $fail('Ad pays nothing');
@@ -184,12 +183,29 @@ function clk_record_click(PDO $pdo, array $in, $status = 'pending') {
         return $fail('Too many clicks');
     }
     if ($ip !== '') {
-        $st = $pdo->prepare("SELECT COUNT(*) FROM ad_clicks WHERE ip_address = ? AND click_time >= CURDATE() AND payment_status <> 'rejected'");
+        $st = $pdo->prepare("SELECT COUNT(*) FROM ad_clicks WHERE ip_address = ? AND click_time >= CURDATE() AND payment_status NOT IN ('rejected', 'self')");
         $st->execute([$ip]);
         if ((int)$st->fetchColumn() >= (int)$cfg['max_clicks_per_ip_per_day']) return $fail('Daily click limit for this visitor reached');
-        $st = $pdo->prepare("SELECT COUNT(*) FROM ad_clicks WHERE ip_address = ? AND ad_id = ? AND click_time >= CURDATE() AND payment_status <> 'rejected'");
+        $st = $pdo->prepare("SELECT COUNT(*) FROM ad_clicks WHERE ip_address = ? AND ad_id = ? AND click_time >= CURDATE() AND payment_status NOT IN ('rejected', 'self')");
         $st->execute([$ip, $adId]);
         if ((int)$st->fetchColumn() >= (int)$cfg['max_clicks_per_ip_per_ad_per_day']) return $fail('Daily click limit for this ad reached');
+    }
+
+    if ($selfClick) {
+        if ($onePerLoad && !clk_claim_page_load($pdo, $loadId)) return $fail('Only one click is counted per page load');
+        $selfRow = [
+            'username' => $dev['username'], 'ad_id' => $adId, 'embed_id' => $embedId !== '' ? $embedId : null,
+            'client_id' => $clientId, 'zone' => $zone, 'ip_address' => $ip, 'user_agent' => $agent,
+            'referer' => mb_substr((string)($_SERVER['HTTP_REFERER'] ?? ''), 0, 500),
+            'pyc_earned' => 0, 'payment_processed' => 1, 'developer_id' => $dev['id'], 'payout_amount' => 0, 'processed' => 1,
+            'payment_status' => 'self', 'developer_name' => $dev['username'], 'developer_address' => $dev['pythoncoin_address'],
+            'advertiser_address' => $ad['advertiser'], 'charged_sat' => 0,
+            'metadata' => json_encode(['source' => 'web', 'self_click' => true, 'recorded_at' => date('c')]),
+        ];
+        $cols = array_keys($selfRow);
+        $pdo->prepare("INSERT INTO ad_clicks (" . implode(',', $cols) . ") VALUES (" . implode(',', array_fill(0, count($cols), '?')) . ")")
+            ->execute(array_values($selfRow));
+        return ['ok' => true, 'id' => (int)$pdo->lastInsertId(), 'amount' => 0.0, 'error' => '', 'developer' => $dev, 'self' => true];
     }
 
     $row = [
